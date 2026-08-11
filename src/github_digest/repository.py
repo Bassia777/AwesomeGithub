@@ -23,14 +23,21 @@ def enrich_repository(repository: TrendingRepo, token: str) -> TrendingRepo:
 
     metadata = _json_object(response)
     if metadata is not None:
-        repository.stars = _parse_stars(metadata.get("stargazers_count"))
+        stars = _parse_stars(metadata.get("stargazers_count"))
+        if stars is not None:
+            repository.stars = stars
         repository.language = _value_or_default(metadata.get("language"), repository.language, "Unknown")
         repository.description = _value_or_default(
             metadata.get("description"), repository.description, ""
         )
 
     repository.readme = ""
-    readme_response = requests.get(f"{repository_url}/readme", headers=_headers(token), timeout=20)
+    try:
+        readme_response = requests.get(
+            f"{repository_url}/readme", headers=_headers(token), timeout=20
+        )
+    except requests.RequestException:
+        return repository
     if readme_response.ok:
         repository.readme = _decode_readme(_json_object(readme_response))
     return repository
@@ -53,13 +60,12 @@ def _json_object(response: requests.Response) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def _parse_stars(value: object) -> int:
-    if isinstance(value, bool):
-        return 0
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError, OverflowError):
-        return 0
+def _parse_stars(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value if value >= 0 else None
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        return int(value)
+    return None
 
 
 def _value_or_default(value: object, existing: str, default: str) -> str:

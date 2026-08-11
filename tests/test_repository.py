@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+import requests
 import responses
 
 from github_digest.models import TrendingRepo
@@ -65,11 +67,11 @@ def test_enrich_repository_keeps_metadata_when_readme_is_not_found() -> None:
 
 
 @responses.activate
-def test_enrich_repository_uses_existing_or_default_metadata_for_null_fields() -> None:
+def test_enrich_repository_preserves_existing_metadata_for_null_fields() -> None:
     responses.add(
         responses.GET,
         f"{API_ROOT}/repos/openai/codex",
-        json={"stargazers_count": "not-a-number", "language": None, "description": None},
+        json={"stargazers_count": None, "language": None, "description": None},
         status=200,
     )
     responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
@@ -77,11 +79,13 @@ def test_enrich_repository_uses_existing_or_default_metadata_for_null_fields() -
 
     enrich_repository(existing, "secret-token")
 
-    assert existing.stars == 0
+    assert existing.stars == 42
     assert existing.language == "Go"
     assert existing.description == "Existing"
 
-    responses.reset()
+
+@responses.activate
+def test_enrich_repository_uses_defaults_for_empty_metadata_fields() -> None:
     responses.add(
         responses.GET,
         f"{API_ROOT}/repos/openai/codex",
@@ -96,6 +100,126 @@ def test_enrich_repository_uses_existing_or_default_metadata_for_null_fields() -
     assert empty.stars == 0
     assert empty.language == "Unknown"
     assert empty.description == ""
+
+
+@pytest.mark.parametrize(
+    "stargazers_count",
+    [None, "not-a-number", -1, True, 1.5],
+    ids=["null", "malformed", "negative", "boolean", "fractional"],
+)
+@responses.activate
+def test_enrich_repository_preserves_stars_for_invalid_metadata_values(
+    stargazers_count: object,
+) -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": stargazers_count},
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    repository = _repository(stars=42)
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 42
+
+
+@responses.activate
+def test_enrich_repository_accepts_decimal_integer_string_stars() -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": "123456"},
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    repository = _repository()
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 123456
+
+
+@responses.activate
+def test_enrich_repository_preserves_metadata_for_non_object_json() -> None:
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex", json=[], status=200)
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    repository = _repository(stars=42, language="Go", description="Existing")
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 42
+    assert repository.language == "Go"
+    assert repository.description == "Existing"
+
+
+@responses.activate
+def test_enrich_repository_preserves_metadata_for_malformed_json() -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        body="not valid JSON",
+        content_type="application/json",
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    repository = _repository(stars=42, language="Go", description="Existing")
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 42
+    assert repository.language == "Go"
+    assert repository.description == "Existing"
+
+
+@responses.activate
+def test_enrich_repository_propagates_metadata_http_errors() -> None:
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex", status=503)
+
+    with pytest.raises(requests.HTTPError):
+        enrich_repository(_repository(), "secret-token")
+
+    assert len(responses.calls) == 1
+
+
+@responses.activate
+def test_enrich_repository_ignores_invalid_base64_readme() -> None:
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex", json={}, status=200)
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex/readme",
+        json={"content": "not valid base64!", "encoding": "base64"},
+        status=200,
+    )
+    repository = _repository(readme="stale")
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.readme == ""
+
+
+@responses.activate
+def test_enrich_repository_keeps_metadata_when_readme_request_fails() -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": 8, "language": "Python", "description": "A repository"},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex/readme",
+        body=requests.ConnectionError("offline"),
+    )
+    repository = _repository(readme="stale")
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 8
+    assert repository.language == "Python"
+    assert repository.description == "A repository"
+    assert repository.readme == ""
 
 
 @responses.activate
