@@ -9,22 +9,35 @@
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;background:#fff1f2;">
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="640" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:640px;background:#ffffff;border:1px solid #fecdd3;border-radius:12px;overflow:hidden;">
-        <tr><td style="padding:26px 28px;background:#b91c1c;color:#ffffff;font-size:22px;font-weight:700;">GitHub Trending Digest 执行失败</td></tr>
-        <tr><td style="padding:24px 28px;font-size:15px;line-height:1.7;">
+        <tr><td style="padding:26px 28px;background:#b91c1c;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
+          <h1 style="margin:0;font-size:22px;font-weight:700;line-height:1.4;">GitHub Trending Digest 执行失败</h1>
+        </td></tr>
+        <tr><td style="padding:24px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;font-size:15px;line-height:1.7;">
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;">
             <tr><td style="padding:8px 0;width:96px;color:#7f1d1d;font-weight:700;">执行时间</td><td style="padding:8px 0;">{{ report.generated_at }}</td></tr>
             <tr><td style="padding:8px 0;color:#7f1d1d;font-weight:700;">失败阶段</td><td style="padding:8px 0;">{{ report.stage }}</td></tr>
             <tr><td style="padding:8px 0;color:#7f1d1d;font-weight:700;">重试情况</td><td style="padding:8px 0;">已重试 {{ report.attempts }} 次</td></tr>
             <tr><td style="padding:8px 0;color:#7f1d1d;font-weight:700;vertical-align:top;">错误信息</td><td style="padding:8px 0;word-break:break-word;">{{ report.error }}</td></tr>
           </table>
-          <div style="margin-top:18px;font-weight:700;color:#7f1d1d;">可能原因</div>
+          <h2 style="margin:18px 0 0;font-size:16px;font-weight:700;color:#7f1d1d;">可能原因</h2>
           <ul style="margin:8px 0 0;padding-left:22px;">
 {% for cause in report.likely_causes %}
             <li style="margin:4px 0;">{{ cause }}</li>
 {% endfor %}
           </ul>
+          <h2 style="margin:22px 0 0;font-size:16px;font-weight:700;color:#7f1d1d;">建议检查项</h2>
+          <ul style="margin:8px 0 0;padding-left:22px;">
+            <li style="margin:4px 0;">GitHub 网络与速率限制</li>
+            <li style="margin:4px 0;">Trending 页面结构是否变化</li>
+            <li style="margin:4px 0;">外部摘要服务状态</li>
+            <li style="margin:4px 0;">Secrets/SMTP 配置</li>
+          </ul>
+{% if actions_url %}
           <div style="margin-top:22px;"><a href="{{ actions_url }}" style="display:inline-block;padding:10px 16px;background:#b91c1c;color:#ffffff;text-decoration:none;border-radius:6px;">查看 GitHub Actions 运行记录</a></div>
           <div style="margin-top:10px;font-size:12px;word-break:break-all;color:#6b7280;">{{ actions_url }}</div>
+{% else %}
+          <div style="margin-top:22px;color:#7f1d1d;">Actions 运行链接不可用</div>
+{% endif %}
         </td></tr>
       </table>
     </td></tr>
