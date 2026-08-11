@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import github_digest.history as history
 from github_digest.history import apply_streaks, save_report
 from github_digest.models import DailyReport, TrendingRepo
 
@@ -251,3 +252,115 @@ def test_save_report_restores_existing_json_when_markdown_publication_fails(
     assert json_path.read_text(encoding="utf-8") == '{"old": true}\n'
     assert markdown_path.read_text(encoding="utf-8") == "old markdown\n"
     assert not list(history_dir.glob(".*"))
+
+
+def test_save_report_cleans_json_temp_when_markdown_staging_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_dir = tmp_path / "history"
+    report = DailyReport(report_date="2026-08-11", generated_at="2026-08-11T08:00:00+00:00")
+    original_stage_text = history._stage_text
+
+    def fail_markdown_stage(path: Path, content: str) -> Path:
+        if path.suffix == ".md":
+            raise OSError("markdown staging failed")
+        return original_stage_text(path, content)
+
+    monkeypatch.setattr(history, "_stage_text", fail_markdown_stage)
+
+    with pytest.raises(OSError, match="markdown staging failed"):
+        save_report(report, "# report", history_dir)
+
+    assert not list(history_dir.glob(".*.tmp"))
+
+
+def test_save_report_preserves_backup_when_restore_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    json_path = history_dir / "2026-08-11.json"
+    markdown_path = history_dir / "2026-08-11.md"
+    json_path.write_text('{"old": true}\n', encoding="utf-8")
+    markdown_path.write_text("old markdown\n", encoding="utf-8")
+    report = DailyReport(report_date="2026-08-11", generated_at="2026-08-11T08:00:00+00:00")
+    original_replace = Path.replace
+    json_replacements = 0
+
+    def fail_publish_and_restore(path: Path, target: Path) -> Path:
+        nonlocal json_replacements
+        if Path(target) == markdown_path:
+            raise OSError("markdown publish failed")
+        if Path(target) == json_path:
+            json_replacements += 1
+            if json_replacements == 2:
+                raise OSError("JSON restore failed")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_publish_and_restore)
+
+    with pytest.raises(RuntimeError, match="recovery artifact") as error:
+        save_report(report, "# report", history_dir)
+
+    assert isinstance(error.value.__cause__, OSError)
+    recovery_path = history_dir / ".2026-08-11.json.recovery"
+    assert recovery_path.read_text(encoding="utf-8") == '{"old": true}\n'
+    assert markdown_path.read_text(encoding="utf-8") == "old markdown\n"
+    assert not list(history_dir.glob(".*.tmp"))
+
+
+def test_save_report_preserves_new_json_when_rollback_unlink_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history_dir = tmp_path / "history"
+    report = DailyReport(report_date="2026-08-11", generated_at="2026-08-11T08:00:00+00:00")
+    json_path = history_dir / "2026-08-11.json"
+    markdown_path = history_dir / "2026-08-11.md"
+    original_replace = Path.replace
+    original_unlink = Path.unlink
+
+    def fail_markdown_publish(path: Path, target: Path) -> Path:
+        if Path(target) == markdown_path:
+            raise OSError("markdown publish failed")
+        return original_replace(path, target)
+
+    def fail_json_unlink(path: Path, *args: object, **kwargs: object) -> None:
+        if path == json_path:
+            raise OSError("JSON unlink failed")
+        original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "replace", fail_markdown_publish)
+    monkeypatch.setattr(Path, "unlink", fail_json_unlink)
+
+    with pytest.raises(RuntimeError, match="recovery artifact") as error:
+        save_report(report, "# report", history_dir)
+
+    assert isinstance(error.value.__cause__, OSError)
+    recovery_path = history_dir / ".2026-08-11.json.recovery"
+    assert json.loads(recovery_path.read_text(encoding="utf-8")) == report.to_dict()
+    assert not json_path.exists()
+    assert not markdown_path.exists()
+    assert not list(history_dir.glob(".*.tmp"))
+
+
+def test_stage_text_closes_raw_descriptor_when_fdopen_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closed_descriptors: list[int] = []
+    original_close = history.os.close
+
+    def fail_fdopen(*args: object, **kwargs: object) -> object:
+        raise OSError("fdopen failed")
+
+    def record_close(descriptor: int) -> None:
+        closed_descriptors.append(descriptor)
+        original_close(descriptor)
+
+    monkeypatch.setattr(history.os, "fdopen", fail_fdopen)
+    monkeypatch.setattr(history.os, "close", record_close)
+
+    with pytest.raises(OSError, match="fdopen failed"):
+        history._stage_text(tmp_path / "report.json", "contents")
+
+    assert len(closed_descriptors) == 1
+    assert not list(tmp_path.glob(".*.tmp"))

@@ -28,7 +28,12 @@ def apply_streaks(
 
 
 def save_report(report: DailyReport, markdown: str, history_dir: Path) -> None:
-    """Atomically persist a successfully generated report as JSON and Markdown pair."""
+    """Persist a staged JSON/Markdown pair and roll back ordinary publication errors.
+
+    Both files are staged and fsynced before either target is replaced. Process termination
+    or power loss between the two replacements cannot be atomic across independent paths;
+    handling that would require a broader recovery protocol.
+    """
     report_date = _validate_report_date(report.report_date)
     json_path, markdown_path = _report_paths(history_dir, report_date)
     json_content = json.dumps(report.to_dict(), ensure_ascii=False, indent=2) + "\n"
@@ -40,8 +45,9 @@ def save_report(report: DailyReport, markdown: str, history_dir: Path) -> None:
     json_backup: Path | None = None
     try:
         json_temporary = _stage_text(json_path, json_content)
+        temporary_paths.append(json_temporary)
         markdown_temporary = _stage_text(markdown_path, markdown_content)
-        temporary_paths.extend((json_temporary, markdown_temporary))
+        temporary_paths.append(markdown_temporary)
         json_backup = _stage_existing_file(json_path)
         if json_backup is not None:
             temporary_paths.append(json_backup)
@@ -51,13 +57,26 @@ def save_report(report: DailyReport, markdown: str, history_dir: Path) -> None:
         json_published = True
         markdown_temporary.replace(markdown_path)
         temporary_paths.remove(markdown_temporary)
-    except BaseException:
+    except BaseException as publication_error:
         if json_published:
             if json_backup is None:
-                json_path.unlink(missing_ok=True)
+                rollback_source = json_path
             else:
-                json_backup.replace(json_path)
-                temporary_paths.remove(json_backup)
+                rollback_source = json_backup
+            try:
+                if json_backup is None:
+                    json_path.unlink(missing_ok=True)
+                else:
+                    json_backup.replace(json_path)
+                    temporary_paths.remove(json_backup)
+            except OSError as rollback_error:
+                if json_backup is not None:
+                    temporary_paths.remove(json_backup)
+                recovery_path = _preserve_recovery(rollback_source, json_path)
+                raise RuntimeError(
+                    "report publication failed and JSON rollback failed; "
+                    f"rollback error: {rollback_error}; recovery artifact preserved at {recovery_path}"
+                ) from publication_error
         raise
     finally:
         for temporary_path in temporary_paths:
@@ -114,32 +133,55 @@ def _stage_existing_file(path: Path) -> Path | None:
 
 
 def _stage_text(path: Path, content: str) -> Path:
-    file_descriptor, temporary_name = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", text=True
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(file_descriptor, "w", encoding="utf-8", newline="\n") as temporary_file:
-            temporary_file.write(content)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-        return temporary_path
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
+    return _stage_file(path, content)
 
 
 def _stage_bytes(path: Path, content: bytes) -> Path:
+    return _stage_file(path, content)
+
+
+def _stage_file(path: Path, content: str | bytes) -> Path:
     file_descriptor, temporary_name = tempfile.mkstemp(
         dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
     )
     temporary_path = Path(temporary_name)
     try:
-        with os.fdopen(file_descriptor, "wb") as temporary_file:
+        if isinstance(content, str):
+            temporary_file = os.fdopen(
+                file_descriptor, "w", encoding="utf-8", newline="\n"
+            )
+        else:
+            temporary_file = os.fdopen(file_descriptor, "wb")
+        file_descriptor = -1
+        with temporary_file:
             temporary_file.write(content)
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
         return temporary_path
     except BaseException:
+        if file_descriptor != -1:
+            try:
+                os.close(file_descriptor)
+            except OSError:
+                pass
         temporary_path.unlink(missing_ok=True)
         raise
+
+
+def _preserve_recovery(source: Path, target: Path) -> Path:
+    recovery_path = _recovery_path(target)
+    try:
+        source.replace(recovery_path)
+    except OSError:
+        return source
+    return recovery_path
+
+
+def _recovery_path(target: Path) -> Path:
+    base_name = f".{target.name}.recovery"
+    recovery_path = target.with_name(base_name)
+    sequence = 1
+    while recovery_path.exists():
+        recovery_path = target.with_name(f"{base_name}.{sequence}")
+        sequence += 1
+    return recovery_path
