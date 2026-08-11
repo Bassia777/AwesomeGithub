@@ -17,7 +17,7 @@ class SummaryResult:
     source: str
 
 
-Provider: TypeAlias = tuple[str, Callable[[TrendingRepo], str]]
+Provider: TypeAlias = tuple[str, Callable[[TrendingRepo], SummaryResult]]
 
 
 def build_prompt(repository: TrendingRepo) -> str:
@@ -35,15 +35,15 @@ def build_prompt(repository: TrendingRepo) -> str:
 
 def summarize_with_fallback(repository: TrendingRepo, providers: tuple[Provider, ...]) -> SummaryResult:
     """Return the first concise provider result, or a repository-derived fallback."""
-    for source, provider in providers:
+    for _, provider in providers:
         try:
             candidate = provider(repository)
         except Exception:
             continue
-        if isinstance(candidate, str):
-            text = candidate.strip()
+        if isinstance(candidate, SummaryResult) and isinstance(candidate.text, str):
+            text = candidate.text.strip()
             if text and len(text) <= 200:
-                return SummaryResult(text=text, source=source)
+                return SummaryResult(text=text, source=candidate.source)
 
     fallback = repository.description.strip()[:200]
     if not fallback:
@@ -55,7 +55,7 @@ def gemini_provider(api_key: str, model: str = "gemini-2.5-flash") -> Provider:
     """Create a Gemini provider callable."""
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-    def summarize(repository: TrendingRepo) -> str:
+    def summarize(repository: TrendingRepo) -> SummaryResult:
         response = requests.post(
             endpoint,
             params={"key": api_key},
@@ -64,7 +64,10 @@ def gemini_provider(api_key: str, model: str = "gemini-2.5-flash") -> Provider:
         )
         response.raise_for_status()
         payload = response.json()
-        return payload["candidates"][0]["content"]["parts"][0]["text"]
+        return SummaryResult(
+            text=payload["candidates"][0]["content"]["parts"][0]["text"],
+            source="Gemini",
+        )
 
     return "Gemini", summarize
 
@@ -74,7 +77,7 @@ def openai_compatible_provider(
 ) -> Provider:
     """Create a provider for OpenAI-compatible chat-completions APIs."""
 
-    def summarize(repository: TrendingRepo) -> str:
+    def summarize(repository: TrendingRepo) -> SummaryResult:
         response = requests.post(
             endpoint,
             headers={
@@ -89,6 +92,6 @@ def openai_compatible_provider(
         )
         response.raise_for_status()
         payload = response.json()
-        return payload["choices"][0]["message"]["content"]
+        return SummaryResult(text=payload["choices"][0]["message"]["content"], source=source)
 
     return source, summarize
