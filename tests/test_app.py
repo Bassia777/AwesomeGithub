@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import replace
+from datetime import datetime, timedelta
 import logging
+from pathlib import Path
 import smtplib
+import traceback
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -351,30 +354,259 @@ def test_summary_or_render_failure_sends_alert_without_saving(
     assert deliveries[0][3] == "GitHub 热榜日报运行异常"
 
 
-def test_normal_smtp_failure_then_alert_smtp_failure_propagates(
+@pytest.mark.parametrize("alert_boundary", ["render", "send"])
+def test_alert_failure_raises_safe_exception_without_secret_exception_chains(
+    monkeypatch, config: Config, alert_boundary: str, caplog
+) -> None:
+    monkeypatch.setattr(app, "datetime", FixedDateTime)
+    primary_raw_message = "primary raw failure: " + " | ".join(
+        (
+            config.gmail_username,
+            config.gmail_app_password,
+            config.recipients[0],
+            config.gemini_api_key,
+            config.deepseek_api_key,
+            config.github_token,
+        )
+    )
+    private_alert_recipient = "private-alert-recipient@example.com"
+    secondary_raw_message = "secondary raw failure includes private recipient"
+    monkeypatch.setattr(
+        app,
+        "fetch_trending",
+        lambda count: (_ for _ in ()).throw(TrendingError(primary_raw_message)),
+    )
+
+    if alert_boundary == "render":
+        monkeypatch.setattr(
+            app,
+            "render_failure",
+            lambda report: (_ for _ in ()).throw(
+                RuntimeError(f"{secondary_raw_message}: {private_alert_recipient}")
+            ),
+        )
+        monkeypatch.setattr(
+            app,
+            "send_html_email",
+            lambda *args: pytest.fail("alert send must not run after render failure"),
+        )
+        expected_category = "RuntimeError"
+    else:
+        monkeypatch.setattr(app, "render_failure", lambda report: "failure")
+
+        def refuse_alert(*args) -> None:
+            raise smtplib.SMTPRecipientsRefused(
+                {private_alert_recipient: (550, secondary_raw_message.encode())}
+            )
+
+        monkeypatch.setattr(app, "send_html_email", refuse_alert)
+        expected_category = "SMTPRecipientsRefused"
+
+    with caplog.at_level(logging.ERROR):
+        with pytest.raises(app.AlertDeliveryError) as caught:
+            app.run(config)
+
+    formatted_traceback = "".join(
+        traceback.format_exception(
+            type(caught.value), caught.value, caught.value.__traceback__
+        )
+    )
+    exposed_text = formatted_traceback + caplog.text + str(caught.value)
+    for private_value in (
+        primary_raw_message,
+        secondary_raw_message,
+        private_alert_recipient,
+        config.gmail_username,
+        config.gmail_app_password,
+        *config.recipients,
+        config.gemini_api_key,
+        config.deepseek_api_key,
+        config.github_token,
+    ):
+        assert private_value not in exposed_text
+    assert caught.value.__context__ is None
+    assert caught.value.__cause__ is None
+    assert caught.value.stage == "GitHub Trending 抓取"
+    assert caught.value.category == expected_category
+    assert "GitHub Trending 抓取" in caplog.text
+    assert "TrendingError" in caplog.text
+    assert "[REDACTED]" in caplog.text
+
+
+def test_invalid_timezone_sends_alert_with_safe_utc_timestamp(
     monkeypatch, config: Config
 ) -> None:
-    patch_success_boundaries(monkeypatch)
-    monkeypatch.setattr(app, "render_digest", lambda report: ("digest", "markdown"))
-    monkeypatch.setattr(app, "render_failure", lambda report: "failure")
-    first_error = smtplib.SMTPException("normal delivery failed")
-    alert_error = smtplib.SMTPAuthenticationError(535, b"alert authentication failed")
-    delivery_errors = iter((first_error, alert_error))
+    invalid_config = replace(config, timezone="Private/invalid-timezone")
+    captured_failure = None
+    deliveries: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        app,
+        "fetch_trending",
+        lambda count: pytest.fail("trending fetch must not run"),
+    )
 
-    def fail_delivery(*args) -> None:
-        raise next(delivery_errors)
+    def capture_failure(report):
+        nonlocal captured_failure
+        captured_failure = report
+        return "failure html"
 
-    monkeypatch.setattr(app, "send_html_email", fail_delivery)
+    monkeypatch.setattr(app, "render_failure", capture_failure)
+    monkeypatch.setattr(app, "send_html_email", lambda *args: deliveries.append(args))
+
+    result = app.run(invalid_config)
+
+    assert result == 1
+    assert captured_failure.stage == "初始化时区"
+    assert captured_failure.attempts == 1
+    generated_at = datetime.fromisoformat(captured_failure.generated_at)
+    assert generated_at.utcoffset() == timedelta(0)
+    assert len(deliveries) == 1
+    assert deliveries[0][3] == "GitHub 热榜日报运行异常"
+
+
+def test_streak_failure_alerts_before_any_summary_render_or_save(
+    monkeypatch, config: Config, caplog
+) -> None:
+    events: list[object] = []
+    patch_success_boundaries(monkeypatch, events=events)
+    captured_failure = None
+
+    def fail_streaks(items, report_date, history_dir) -> None:
+        events.append("streak-failure")
+        raise OSError("history read failed")
+
+    def render_alert(report):
+        nonlocal captured_failure
+        captured_failure = report
+        events.append("failure-render")
+        return "failure"
+
+    monkeypatch.setattr(app, "apply_streaks", fail_streaks)
+    monkeypatch.setattr(app, "render_failure", render_alert)
+    monkeypatch.setattr(
+        app,
+        "send_html_email",
+        lambda username, password, recipients, subject, html: events.append(
+            ("send", subject)
+        ),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_digest",
+        lambda report: pytest.fail("normal rendering must not run"),
+    )
     monkeypatch.setattr(
         app,
         "save_report",
-        lambda *args: pytest.fail("history must not be saved"),
+        lambda *args: pytest.fail("history save must not run"),
     )
 
-    with pytest.raises(smtplib.SMTPAuthenticationError) as caught:
-        app.run(config)
+    with caplog.at_level(logging.ERROR):
+        assert app.run(config) == 1
+    assert captured_failure.stage == "历史连续上榜计算"
+    assert captured_failure.attempts == 1
+    assert events[-3:] == [
+        "streak-failure",
+        "failure-render",
+        ("send", "GitHub 热榜日报运行异常"),
+    ]
+    assert not any(
+        isinstance(event, tuple) and event[0] == "summary" for event in events
+    )
+    assert "history read failed" in caplog.text
 
-    assert caught.value is alert_error
+
+def test_normal_send_failure_then_successful_alert_returns_one_without_save(
+    monkeypatch, config: Config, caplog
+) -> None:
+    events: list[object] = []
+    patch_success_boundaries(monkeypatch, events=events)
+    captured_failure = None
+
+    def render_digest(report):
+        events.append("digest-render")
+        return "digest", "markdown"
+
+    def render_alert(report):
+        nonlocal captured_failure
+        captured_failure = report
+        events.append("failure-render")
+        return "failure"
+
+    def deliver(username, password, recipients, subject, html) -> None:
+        events.append(("send", subject))
+        if subject != "GitHub 热榜日报运行异常":
+            raise smtplib.SMTPException("normal send failed")
+
+    monkeypatch.setattr(app, "render_digest", render_digest)
+    monkeypatch.setattr(app, "render_failure", render_alert)
+    monkeypatch.setattr(app, "send_html_email", deliver)
+    monkeypatch.setattr(
+        app,
+        "save_report",
+        lambda *args: pytest.fail("history save must not run"),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        assert app.run(config) == 1
+    assert captured_failure.stage == "日报邮件发送"
+    assert events[-4:] == [
+        "digest-render",
+        ("send", "GitHub 热榜日报 - 2026-08-11"),
+        "failure-render",
+        ("send", "GitHub 热榜日报运行异常"),
+    ]
+    assert "normal send failed" in caplog.text
+
+
+def test_history_save_failure_alerts_after_normal_delivery_without_retrying_save(
+    monkeypatch, config: Config, caplog
+) -> None:
+    events: list[object] = []
+    patch_success_boundaries(monkeypatch, events=events)
+    history_dir = config.history_dir
+    marker_path = Path(history_dir) / "existing.marker"
+    marker_path.parent.mkdir(parents=True)
+    marker_path.write_text("unchanged", encoding="utf-8")
+    captured_failure = None
+
+    def render_digest(report):
+        events.append("digest-render")
+        return "digest", "markdown"
+
+    def deliver(username, password, recipients, subject, html) -> None:
+        events.append(("send", subject))
+
+    def fail_save(report, markdown, target_history_dir) -> None:
+        events.append(("save", target_history_dir))
+        raise OSError("publication failed")
+
+    def render_alert(report):
+        nonlocal captured_failure
+        captured_failure = report
+        events.append("failure-render")
+        return "failure"
+
+    monkeypatch.setattr(app, "render_digest", render_digest)
+    monkeypatch.setattr(app, "send_html_email", deliver)
+    monkeypatch.setattr(app, "save_report", fail_save)
+    monkeypatch.setattr(app, "render_failure", render_alert)
+
+    with caplog.at_level(logging.ERROR):
+        assert app.run(config) == 1
+    assert captured_failure.stage == "历史报告保存"
+    assert marker_path.read_text(encoding="utf-8") == "unchanged"
+    assert events[-5:] == [
+        "digest-render",
+        ("send", "GitHub 热榜日报 - 2026-08-11"),
+        ("save", marker_path.parent),
+        "failure-render",
+        ("send", "GitHub 热榜日报运行异常"),
+    ]
+    assert sum(
+        1 for event in events if isinstance(event, tuple) and event[0] == "save"
+    ) == 1
+    assert "publication failed" in caplog.text
 
 
 def test_failure_error_sanitizer_removes_configured_credentials_and_tokens(

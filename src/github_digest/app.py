@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
@@ -37,6 +37,15 @@ _REPOSITORY = re.compile(r"[A-Za-z0-9._-]+\Z")
 _RUN_ID = re.compile(r"[1-9][0-9]*\Z")
 
 
+class AlertDeliveryError(RuntimeError):
+    """A sanitized failure raised when the failure alert cannot be delivered."""
+
+    def __init__(self, stage: str, category: str) -> None:
+        self.stage = stage
+        self.category = category
+        super().__init__(f"Failure alert delivery failed at {stage} ({category})")
+
+
 def summarize_repository(repository: TrendingRepo, config: Config) -> tuple[str, str]:
     """Summarize one repository through the configured provider fallback chain."""
     providers = (
@@ -66,10 +75,14 @@ def summarize_repository(repository: TrendingRepo, config: Config) -> tuple[str,
 
 def run(config: Config) -> int:
     """Run the digest pipeline, alerting recipients when an ordinary stage fails."""
-    now = datetime.now(ZoneInfo(config.timezone))
-    stage = "GitHub Trending 抓取"
+    now: datetime | None = None
+    stage = "初始化时区"
+    alert_delivery_error: AlertDeliveryError | None = None
 
     try:
+        now = datetime.now(ZoneInfo(config.timezone))
+
+        stage = "GitHub Trending 抓取"
         repositories = fetch_trending(config.top_count)
 
         stage = "GitHub 仓库信息补全"
@@ -120,29 +133,50 @@ def run(config: Config) -> int:
         save_report(report, markdown, Path(config.history_dir))
         return 0
     except Exception as error:
-        LOGGER.error("Digest pipeline failed at %s (%s)", stage, type(error).__name__)
+        failure_time = now if now is not None else datetime.now(timezone.utc)
         attempts = (
             3
             if stage == "GitHub Trending 抓取" and isinstance(error, TrendingError)
             else 1
         )
         failure = FailureReport(
-            generated_at=now.isoformat(),
+            generated_at=failure_time.isoformat(),
             stage=stage,
             attempts=attempts,
             error=_sanitize_error(error, config),
             likely_causes=_likely_causes(stage),
             actions_url=_actions_url(),
         )
-        failure_html = render_failure(failure)
-        send_html_email(
-            config.gmail_username,
-            config.gmail_app_password,
-            config.recipients,
-            _FAILURE_SUBJECT,
-            failure_html,
+        LOGGER.error(
+            "Digest pipeline failed at %s (%s): %s",
+            failure.stage,
+            type(error).__name__,
+            failure.error,
         )
-        return 1
+        try:
+            failure_html = render_failure(failure)
+            send_html_email(
+                config.gmail_username,
+                config.gmail_app_password,
+                config.recipients,
+                _FAILURE_SUBJECT,
+                failure_html,
+            )
+        except Exception as alert_error:
+            alert_delivery_error = AlertDeliveryError(
+                failure.stage, type(alert_error).__name__
+            )
+            LOGGER.error(
+                "Failure alert delivery failed at %s (%s)",
+                failure.stage,
+                type(alert_error).__name__,
+            )
+        else:
+            return 1
+
+    if alert_delivery_error is not None:
+        raise alert_delivery_error from None
+    raise RuntimeError("unreachable orchestration state")
 
 
 def _sanitize_error(error: Exception, config: Config) -> str:
@@ -177,6 +211,8 @@ def _sanitized_repository_name(full_name: object) -> str:
 
 
 def _likely_causes(stage: str) -> tuple[str, ...]:
+    if stage == "初始化时区":
+        return ("配置的时区名称无效或运行环境缺少时区数据",)
     if stage == "GitHub Trending 抓取":
         return (
             "GitHub Trending 页面暂时不可用或结构发生变化",
