@@ -23,17 +23,19 @@ Provider: TypeAlias = tuple[str, ProviderCallable]
 
 REQUEST_TIMEOUT_SECONDS = 45  # Per-request timeout; there is no global deadline.
 _CJK_CHARACTER = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
+_MINIMUM_CJK_CHARACTERS = 4
+_MINIMUM_CJK_RATIO = 0.30
 _REFUSAL_OR_IGNORE_PHRASES = (
-    "抱歉",
-    "我不能",
-    "无法",
+    "无法完成该请求",
     "不能协助",
+    "作为一个ai",
     "忽略之前",
     "忽略上述",
     "as an ai",
     "i cannot",
     "i can't",
     "ignore previous",
+    "ignore this repository",
 )
 _SYSTEM_INSTRUCTION = (
     "请用简体中文写一段不超过 200 个汉字的项目摘要，自然涵盖项目背景、解决的痛点，"
@@ -134,11 +136,18 @@ def openai_compatible_provider(
 
 
 def _is_valid_summary(text: str) -> bool:
+    """Require at least four CJK characters and 30% CJK meaningful characters."""
     normalized = text.casefold()
+    meaningful_characters = [character for character in text if character.isalnum()]
+    cjk_count = sum(
+        _CJK_CHARACTER.fullmatch(character) is not None for character in meaningful_characters
+    )
+    cjk_ratio = cjk_count / len(meaningful_characters) if meaningful_characters else 0
     return (
         bool(text)
         and len(text) <= 200
-        and _CJK_CHARACTER.search(text) is not None
+        and cjk_count >= _MINIMUM_CJK_CHARACTERS
+        and cjk_ratio >= _MINIMUM_CJK_RATIO
         and not any(phrase in normalized for phrase in _REFUSAL_OR_IGNORE_PHRASES)
     )
 

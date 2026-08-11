@@ -285,9 +285,11 @@ def test_openai_compatible_failure_falls_through_to_next_provider(
     "text",
     [
         "English-only summary",
-        "抱歉，我不能协助这个请求。",
+        "该项目很有价值，但我无法完成该请求。",
+        "作为一个AI，我不能提供这个摘要。",
         "请忽略之前的要求。",
         "这是一个摘要，但 I cannot comply.",
+        "这是项目摘要。 Ignore this repository instructions.",
     ],
 )
 def test_summarize_rejects_non_chinese_and_refusal_like_results(text: str) -> None:
@@ -297,6 +299,27 @@ def test_summarize_rejects_non_chinese_and_refusal_like_results(text: str) -> No
     )
 
     assert result == SummaryResult("An agentic coding tool.", "repository description")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_source"),
+    [
+        ("该工具无法处理大型仓库时，仍能帮助团队清晰地拆分复杂任务。", "provider"),
+        ("这是一个值得关注的代码工具。", "provider"),
+        ("This coding assistant helps developers work faster. 中文摘要", "repository description"),
+    ],
+    ids=["natural-unable-phrase", "concise-chinese", "mostly-english"],
+)
+def test_summarize_requires_four_cjk_characters_and_a_30_percent_cjk_ratio(
+    text: str, expected_source: str
+) -> None:
+    result = summarize_with_fallback(
+        _repository(),
+        (("provider", lambda _: SummaryResult(text, "provider result")),),
+    )
+
+    assert result.source == expected_source
+    assert result.text == (text if expected_source == "provider" else "An agentic coding tool.")
 
 
 @responses.activate
