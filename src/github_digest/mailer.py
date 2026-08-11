@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import smtplib
+from email.errors import HeaderParseError
 from email.headerregistry import Address
 from email.message import EmailMessage
 
@@ -31,7 +32,7 @@ def _canonical_address(value: str, error_message: str) -> str:
         raise MailerError(error_message)
     try:
         address = Address(addr_spec=value).addr_spec
-    except (TypeError, ValueError):
+    except (HeaderParseError, TypeError, ValueError):
         raise MailerError(error_message) from None
     if address != value or not EMAIL_PATTERN.fullmatch(address):
         raise MailerError(error_message)

@@ -72,7 +72,9 @@ def test_send_html_email_deduplicates_recipients_case_insensitively() -> None:
     [
         ("digest@example.com", (), "Daily digest"),
         ("not-an-email", ("recipient@example.com",), "Daily digest"),
+        ("foo@example..com", ("recipient@example.com",), "Daily digest"),
         ("digest@example.com", ("not-an-email",), "Daily digest"),
+        ("digest@example.com", ("foo@example..com",), "Daily digest"),
         ("digest@example.com", ("first@example.com,second@example.com",), "Daily digest"),
         ("digest@example.com", ("first@example.com;second@example.com",), "Daily digest"),
         ("digest@example.com", ("Recipient <recipient@example.com>",), "Daily digest"),
