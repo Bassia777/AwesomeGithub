@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 class ConfigError(ValueError):
@@ -38,11 +38,11 @@ def _required(name: str) -> str:
 @dataclass(frozen=True, slots=True)
 class Config:
     gmail_username: str
-    gmail_app_password: str
+    gmail_app_password: str = field(repr=False)
     recipients: tuple[str, ...]
-    gemini_api_key: str
-    deepseek_api_key: str
-    github_token: str
+    gemini_api_key: str = field(repr=False)
+    deepseek_api_key: str = field(repr=False)
+    github_token: str = field(repr=False)
     timezone: str = "Asia/Shanghai"
     top_count: int = 5
     history_dir: str = "reports/history"
