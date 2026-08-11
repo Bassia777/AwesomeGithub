@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import date
 import re
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
@@ -17,11 +18,11 @@ ENV = Environment(
     lstrip_blocks=True,
 )
 
-_REPOSITORY_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+\Z")
-_ACTIONS_PATH = re.compile(
-    r"^/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/actions/runs/([0-9]+)$"
-)
-_MARKDOWN_SPECIAL_CHARACTERS = "\\`*_{}[]<>()#+-.!|"
+_REPORT_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")
+_OWNER = re.compile(r"[A-Za-z0-9-]+\Z")
+_REPOSITORY = re.compile(r"[A-Za-z0-9._-]+\Z")
+_RUN_ID = re.compile(r"[1-9][0-9]*\Z")
+_MARKDOWN_SPECIAL_CHARACTERS = r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
 
 
 def render_digest(report: DailyReport) -> tuple[str, str]:
@@ -29,14 +30,23 @@ def render_digest(report: DailyReport) -> tuple[str, str]:
     if len(report.repositories) != 5:
         raise ValueError("A digest requires exactly 5 repositories")
 
+    report_date = _validated_report_date(report.report_date)
+    for repository in report.repositories:
+        _validate_repository_numbers(repository)
+    _validate_top_five_ranks(report.repositories)
     projects = [_project_context(repository) for repository in report.repositories]
-    html = ENV.get_template("digest.html.j2").render(report=report, projects=projects)
-    markdown = _render_markdown(report, projects)
+    html = ENV.get_template("digest.html.j2").render(
+        report=report,
+        report_date=report_date,
+        projects=projects,
+    )
+    markdown = _render_markdown(report_date, projects)
     return html, markdown
 
 
 def render_failure(report: FailureReport) -> str:
     """Render a safe, actionable HTML email for a failed digest execution."""
+    _validate_positive_integer(report.attempts, "failure.attempts")
     return ENV.get_template("failure.html.j2").render(
         report=report,
         actions_url=_canonical_actions_url(report.actions_url),
@@ -44,7 +54,7 @@ def render_failure(report: FailureReport) -> str:
 
 
 def _project_context(repository: TrendingRepo) -> dict[str, object]:
-    _validate_repository_numbers(repository)
+    identity = _repository_identity(repository.full_name)
     return {
         "rank": repository.rank,
         "full_name": _normalize_text(repository.full_name, "full_name"),
@@ -52,7 +62,7 @@ def _project_context(repository: TrendingRepo) -> dict[str, object]:
         "stars": repository.stars,
         "summary": _normalize_text(repository.summary_zh, "summary_zh"),
         "streak_label": _streak_label(repository.streak_days),
-        "url": _canonical_repository_url(repository.url),
+        "url": _canonical_repository_url(repository.url, identity),
     }
 
 
@@ -66,6 +76,11 @@ def _validate_repository_numbers(repository: TrendingRepo) -> None:
     _validate_positive_integer(repository.rank, "repository.rank")
     _validate_non_negative_integer(repository.stars, "repository.stars")
     _validate_positive_integer(repository.streak_days, "repository.streak_days")
+
+
+def _validate_top_five_ranks(repositories: list[TrendingRepo]) -> None:
+    if [repository.rank for repository in repositories] != [1, 2, 3, 4, 5]:
+        raise ValueError("repository ranks must be exactly [1, 2, 3, 4, 5] in order")
 
 
 def _validate_positive_integer(value: object, field: str) -> None:
@@ -84,45 +99,92 @@ def _normalize_text(value: object, field: str) -> str:
     return re.sub(r"[\r\n]+", " ", value)
 
 
-def _canonical_repository_url(value: object) -> str | None:
+def _validated_report_date(value: object) -> str:
+    if not isinstance(value, str) or _REPORT_DATE.fullmatch(value) is None:
+        raise ValueError("report.report_date must be an ISO YYYY-MM-DD date")
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        raise ValueError("report.report_date must be an ISO YYYY-MM-DD date") from None
+    return value
+
+
+def _repository_identity(value: object) -> tuple[str, str] | None:
+    if not isinstance(value, str):
+        return None
+    parts = value.split("/")
+    if len(parts) != 2 or not _is_valid_owner(parts[0]) or not _is_valid_repository(parts[1]):
+        return None
+    return parts[0], parts[1]
+
+
+def _is_valid_owner(value: str) -> bool:
+    return (
+        1 <= len(value) <= 39
+        and _OWNER.fullmatch(value) is not None
+        and not value.startswith("-")
+        and not value.endswith("-")
+    )
+
+
+def _is_valid_repository(value: str) -> bool:
+    return (
+        1 <= len(value) <= 100
+        and value not in {".", ".."}
+        and _REPOSITORY.fullmatch(value) is not None
+    )
+
+
+def _parse_exact_github_url(value: object) -> ParseResult | None:
     if not isinstance(value, str):
         return None
     try:
         parsed = urlparse(value)
     except ValueError:
         return None
-    path_parts = [part for part in parsed.path.split("/") if part]
     if (
         parsed.scheme != "https"
-        or parsed.hostname != "github.com"
-        or parsed.netloc.lower() != "github.com"
+        or parsed.netloc != "github.com"
         or parsed.query
         or parsed.fragment
-        or len(path_parts) != 2
-        or not all(_REPOSITORY_SEGMENT.fullmatch(part) for part in path_parts)
+        or parsed.params
     ):
         return None
-    return f"https://github.com/{path_parts[0]}/{path_parts[1]}"
+    return parsed
+
+
+def _canonical_repository_url(
+    value: object, expected_identity: tuple[str, str] | None
+) -> str | None:
+    parsed = _parse_exact_github_url(value)
+    if parsed is None or expected_identity is None:
+        return None
+    path = parsed.path.split("/")
+    if len(path) != 3 or path[0] or not _is_valid_owner(path[1]) or not _is_valid_repository(path[2]):
+        return None
+    url_identity = path[1], path[2]
+    if tuple(part.casefold() for part in url_identity) != tuple(
+        part.casefold() for part in expected_identity
+    ):
+        return None
+    return f"https://github.com/{expected_identity[0]}/{expected_identity[1]}"
 
 
 def _canonical_actions_url(value: object) -> str | None:
-    if not isinstance(value, str):
+    parsed = _parse_exact_github_url(value)
+    if parsed is None:
         return None
-    try:
-        parsed = urlparse(value)
-    except ValueError:
-        return None
-    match = _ACTIONS_PATH.fullmatch(parsed.path)
+    path = parsed.path.split("/")
     if (
-        parsed.scheme != "https"
-        or parsed.hostname != "github.com"
-        or parsed.netloc.lower() != "github.com"
-        or parsed.query
-        or parsed.fragment
-        or match is None
+        len(path) != 6
+        or path[0]
+        or not _is_valid_owner(path[1])
+        or not _is_valid_repository(path[2])
+        or path[3:5] != ["actions", "runs"]
+        or _RUN_ID.fullmatch(path[5]) is None
     ):
         return None
-    owner, repository, run_id = match.groups()
+    owner, repository, run_id = path[1], path[2], path[5]
     return f"https://github.com/{owner}/{repository}/actions/runs/{run_id}"
 
 
@@ -134,8 +196,8 @@ def _escape_markdown(value: str) -> str:
     )
 
 
-def _render_markdown(report: DailyReport, projects: list[dict[str, object]]) -> str:
-    lines = ["# GitHub Trending 全球 Top 5", "", f"日期：{report.report_date}", ""]
+def _render_markdown(report_date: str, projects: list[dict[str, object]]) -> str:
+    lines = ["# GitHub Trending 全球 Top 5", "", f"日期：{report_date}", ""]
     for project in projects:
         url = project["url"]
         streak_label = project["streak_label"]

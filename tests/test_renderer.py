@@ -45,7 +45,7 @@ def test_render_digest_renders_five_utf8_cards_and_markdown() -> None:
         assert repository.full_name in html
         assert repository.summary_zh in html
         assert f'href="{repository.url}"' in html
-        assert repository.full_name in markdown
+        assert repository.full_name.replace("/", r"\/").replace("-", r"\-") in markdown
         assert repository.summary_zh in markdown
         assert repository.url in markdown
     assert "# GitHub Trending 全球 Top 5" in markdown
@@ -68,9 +68,10 @@ def test_render_digest_uses_five_independent_table_cards() -> None:
     for card in cards:
         assert "background:" in card["style"]
         assert "border:" in card["style"]
-        assert "margin:" in card["style"]
+        assert "margin:" not in card["style"]
         assert not card.select('table[data-project-card="true"]')
         assert "padding:" in card.find("td")["style"]
+        assert "padding-bottom:" in card.parent["style"]
 
 
 def test_render_digest_autoescapes_text_and_blocks_unsafe_href() -> None:
@@ -90,7 +91,7 @@ def test_render_digest_autoescapes_text_and_blocks_unsafe_href() -> None:
     assert 'href="#"' not in html
     assert "javascript:alert(1)" not in markdown
     assert not re.search(r"(?<!\\)<img src=x onerror", markdown)
-    assert r'\<img src=x onerror="alert\(1\)"\>' in markdown
+    assert r'\<img src\=x onerror\=\"alert\(1\)\"\>' in markdown
 
 
 def test_render_digest_neutralizes_hostile_markdown_and_html() -> None:
@@ -112,8 +113,70 @@ def test_render_digest_neutralizes_hostile_markdown_and_html() -> None:
     assert not re.search(r"(?<!\\)<img src=x", markdown)
     assert "![image](https://evil.example/image.png)" not in markdown
     assert "[injected link](javascript:alert(1))" not in markdown
-    assert r"\<img src=x onerror=alert\(1\)\>" in markdown
-    assert r"\[injected link\]\(javascript:alert\(1\)\)" in markdown
+    assert r"\<img src\=x onerror\=alert\(1\)\>" in markdown
+    assert r"\[injected link\]\(javascript\:alert\(1\)\)" in markdown
+
+
+def test_render_digest_escapes_fences_tildes_and_all_ascii_punctuation() -> None:
+    report = _report()
+    report.repositories[0].summary_zh = "~~~html\n```html\n`code` ~ tilde !@#$%^&*_-+=|:;,.?/\\"
+
+    _, markdown = render_digest(report)
+
+    assert "\n~~~html" not in markdown
+    assert "\n```html" not in markdown
+    assert r"\~\~\~html" in markdown
+    assert r"\`\`\`html" in markdown
+    assert r"\`code\`" in markdown
+    assert r"\!\@\#\$\%\^\&\*\_\-\+\=\|\:\;\,\.\?\/\\" in markdown
+
+
+@pytest.mark.parametrize("report_date", ["2026-8-11", "2026-02-30", "2026-08-11\n# heading"])
+def test_render_digest_rejects_noncanonical_report_date(report_date: str) -> None:
+    report = _report()
+    report.report_date = report_date
+
+    with pytest.raises(ValueError, match="report.report_date"):
+        render_digest(report)
+
+
+def test_render_digest_derives_canonical_link_from_matching_full_name() -> None:
+    report = _report()
+    report.repositories[0].full_name = "OpenAI/Codex"
+    report.repositories[0].url = "https://github.com/openai/codex"
+
+    html, markdown = render_digest(report)
+
+    assert 'href="https://github.com/OpenAI/Codex"' in html
+    assert "[OpenAI\\/Codex](https://github.com/OpenAI/Codex)" in markdown
+
+
+@pytest.mark.parametrize(
+    ("full_name", "url"),
+    [
+        ("owner/repo", "https://github.com/other/repo"),
+        ("-owner/repo", "https://github.com/-owner/repo"),
+        ("owner-/repo", "https://github.com/owner-/repo"),
+        ("owner/.", "https://github.com/owner/."),
+        ("owner/..", "https://github.com/owner/.."),
+        ("owner/repo", "https://user@github.com/owner/repo"),
+        ("owner/repo", "https://github.com:443/owner/repo"),
+        ("owner/repo", "https://github.com/owner/repo/extra"),
+        ("owner/repo", "https://github.com/owner/repo?query=value"),
+    ],
+)
+def test_render_digest_omits_links_for_noncanonical_repository_identity(
+    full_name: str, url: str
+) -> None:
+    report = _report()
+    report.repositories[0].full_name = full_name
+    report.repositories[0].url = url
+
+    html, markdown = render_digest(report)
+
+    first_card = BeautifulSoup(html, "html.parser").select('[data-project-card="true"]')[0]
+    assert not first_card.find("a")
+    assert url not in markdown
 
 
 def test_render_digest_requires_exactly_five_repositories() -> None:
@@ -142,6 +205,16 @@ def test_render_digest_rejects_malformed_numeric_repository_values(
     setattr(report.repositories[0], attribute, value)
 
     with pytest.raises(ValueError, match=message):
+        render_digest(report)
+
+
+@pytest.mark.parametrize("ranks", [[1, 2, 2, 4, 5], [2, 1, 3, 4, 5]])
+def test_render_digest_requires_ordered_unique_top_five_ranks(ranks: list[int]) -> None:
+    report = _report()
+    for repository, rank in zip(report.repositories, ranks, strict=True):
+        repository.rank = rank
+
+    with pytest.raises(ValueError, match="ranks"):
         render_digest(report)
 
 
@@ -204,3 +277,44 @@ def test_render_failure_hides_invalid_actions_links(actions_url: str) -> None:
     document = BeautifulSoup(html, "html.parser")
     assert "Actions 运行链接不可用" in document.get_text()
     assert not document.find("a")
+
+
+@pytest.mark.parametrize(
+    "actions_url",
+    [
+        "https://github.com/owner/repo/actions/runs/0",
+        "https://github.com/-owner/repo/actions/runs/1",
+        "https://github.com/owner/../repo/actions/runs/1",
+        "https://github.com/owner/repo/actions/runs/1?query=value",
+        "https://user@github.com/owner/repo/actions/runs/1",
+        "https://github.com:443/owner/repo/actions/runs/1",
+    ],
+)
+def test_render_failure_rejects_noncanonical_actions_identity(actions_url: str) -> None:
+    failure = FailureReport(
+        generated_at="2026-08-11T09:00:00+00:00",
+        stage="发送邮件",
+        attempts=2,
+        error="SMTP unavailable",
+        likely_causes=("网络超时",),
+        actions_url=actions_url,
+    )
+
+    html = render_failure(failure)
+
+    assert "Actions 运行链接不可用" in BeautifulSoup(html, "html.parser").get_text()
+
+
+@pytest.mark.parametrize("attempts", [0, -1, True, "two"])
+def test_render_failure_rejects_invalid_attempt_count(attempts: object) -> None:
+    failure = FailureReport(
+        generated_at="2026-08-11T09:00:00+00:00",
+        stage="发送邮件",
+        attempts=attempts,
+        error="SMTP unavailable",
+        likely_causes=("网络超时",),
+        actions_url="https://github.com/owner/repo/actions/runs/1",
+    )
+
+    with pytest.raises(ValueError, match="attempts"):
+        render_failure(failure)
