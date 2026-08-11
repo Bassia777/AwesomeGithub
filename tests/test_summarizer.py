@@ -38,7 +38,7 @@ def test_summarize_uses_only_the_first_valid_provider() -> None:
         called.append("later")
         return SummaryResult(text="不应调用", source="Later result")
 
-    result = summarize_with_fallback(_repository(), (("First", first), ("Later", later)))
+    result = summarize_with_fallback(_repository(), [("First", first), ("Later", later)])
 
     assert result == SummaryResult(text="首个可用摘要。", source="First result")
     assert called == ["first"]
@@ -142,10 +142,9 @@ def test_gemini_provider_posts_expected_request_and_parses_response(monkeypatch:
 
     monkeypatch.setattr("github_digest.summarizer.requests.post", recording_post)
 
-    name, provider = gemini_provider("gemini-key", model="gemini-test")
+    provider = gemini_provider("gemini-key", model="gemini-test")
     result = provider(_repository())
 
-    assert name == "Gemini"
     assert result == SummaryResult(text="Gemini 摘要", source="Gemini")
     assert observed["timeout"] == 45
     request = responses.calls[0].request
@@ -182,10 +181,9 @@ def test_openai_compatible_provider_posts_authorized_request_and_parses_response
 
     monkeypatch.setattr("github_digest.summarizer.requests.post", recording_post)
 
-    name, provider = openai_compatible_provider(source, endpoint, "api-key", "chosen-model")
+    provider = openai_compatible_provider(source, endpoint, "api-key", "chosen-model")
     result = provider(_repository())
 
-    assert name == source
     assert result == SummaryResult(text="兼容摘要", source=source)
     assert observed["timeout"] == 45
     request = responses.calls[0].request
@@ -220,7 +218,7 @@ def test_summarize_falls_through_provider_failures(failure: object) -> None:
 def test_gemini_http_status_failure_falls_through_to_next_provider() -> None:
     endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     responses.add(responses.POST, endpoint, status=500)
-    _, gemini = gemini_provider("gemini-key")
+    gemini = gemini_provider("gemini-key")
 
     result = summarize_with_fallback(
         _repository(),
@@ -244,7 +242,7 @@ def test_gemini_malformed_response_falls_through_to_next_provider(
 ) -> None:
     endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     responses.add(responses.POST, endpoint, body=body, content_type=content_type, status=200)
-    _, gemini = gemini_provider("gemini-key")
+    gemini = gemini_provider("gemini-key")
 
     result = summarize_with_fallback(
         _repository(),
@@ -267,7 +265,7 @@ def test_openai_compatible_failure_falls_through_to_next_provider(
     endpoint: str, response_kwargs: dict[str, object]
 ) -> None:
     responses.add(responses.POST, endpoint, **response_kwargs)
-    _, provider = openai_compatible_provider("Compatible", endpoint, "api-key", "model")
+    provider = openai_compatible_provider("Compatible", endpoint, "api-key", "model")
 
     result = summarize_with_fallback(
         _repository(),

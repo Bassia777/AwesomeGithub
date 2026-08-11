@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TypeAlias
 
@@ -17,7 +17,8 @@ class SummaryResult:
     source: str
 
 
-Provider: TypeAlias = tuple[str, Callable[[TrendingRepo], SummaryResult]]
+ProviderCallable: TypeAlias = Callable[[TrendingRepo], SummaryResult]
+Provider: TypeAlias = tuple[str, ProviderCallable]
 
 
 def build_prompt(repository: TrendingRepo) -> str:
@@ -33,7 +34,7 @@ def build_prompt(repository: TrendingRepo) -> str:
     )
 
 
-def summarize_with_fallback(repository: TrendingRepo, providers: tuple[Provider, ...]) -> SummaryResult:
+def summarize_with_fallback(repository: TrendingRepo, providers: Sequence[Provider]) -> SummaryResult:
     """Return the first concise provider result, or a repository-derived fallback."""
     for _, provider in providers:
         try:
@@ -51,7 +52,7 @@ def summarize_with_fallback(repository: TrendingRepo, providers: tuple[Provider,
     return SummaryResult(text=fallback, source="repository description")
 
 
-def gemini_provider(api_key: str, model: str = "gemini-2.5-flash") -> Provider:
+def gemini_provider(api_key: str, model: str = "gemini-2.5-flash") -> ProviderCallable:
     """Create a Gemini provider callable."""
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -69,12 +70,12 @@ def gemini_provider(api_key: str, model: str = "gemini-2.5-flash") -> Provider:
             source="Gemini",
         )
 
-    return "Gemini", summarize
+    return summarize
 
 
 def openai_compatible_provider(
     source: str, endpoint: str, api_key: str, model: str
-) -> Provider:
+) -> ProviderCallable:
     """Create a provider for OpenAI-compatible chat-completions APIs."""
 
     def summarize(repository: TrendingRepo) -> SummaryResult:
@@ -94,4 +95,4 @@ def openai_compatible_provider(
         payload = response.json()
         return SummaryResult(text=payload["choices"][0]["message"]["content"], source=source)
 
-    return source, summarize
+    return summarize
