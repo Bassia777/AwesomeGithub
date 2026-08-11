@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "github-trending-daily"
+version = "0.1.0"
+description = "Daily GitHub Trending email digest"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4",
+    "jinja2",
+    "requests",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "responses",
+]
+
+[project.scripts]
+github-trending-digest = "github_digest.app:main"
+
+[tool.setuptools.package-data]
+github_digest = ["templates/*.j2"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
