@@ -16,6 +16,8 @@ from github_digest.models import TrendingRepo
 TRENDING_URL = "https://github.com/trending?since=daily"
 _GITHUB_URL = "https://github.com"
 _USER_AGENT = "github-trending-daily/0.1"
+_OWNER_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$")
+_REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 class TrendingError(RuntimeError):
@@ -26,6 +28,7 @@ def parse_trending(html: str, top_count: int = 5) -> list[TrendingRepo]:
     """Parse exactly ``top_count`` valid repositories from Trending HTML."""
     soup = BeautifulSoup(html, "html.parser")
     repositories: list[TrendingRepo] = []
+    seen_full_names: set[str] = set()
 
     for article in soup.select("article.Box-row"):
         link = article.select_one("h2 a[href]")
@@ -33,8 +36,9 @@ def parse_trending(html: str, top_count: int = 5) -> list[TrendingRepo]:
             continue
 
         full_name = _normalise_full_name(link["href"])
-        if full_name is None:
+        if full_name is None or full_name.casefold() in seen_full_names:
             continue
+        seen_full_names.add(full_name.casefold())
 
         description = _text_or_empty(article.select_one("p"))
         language = _text_or_empty(article.select_one("[itemprop='programmingLanguage']")) or "Unknown"
@@ -81,13 +85,24 @@ def fetch_trending(top_count: int = 5, attempts: int = 3) -> list[TrendingRepo]:
 
 
 def _normalise_full_name(href: str) -> str | None:
-    path = urlsplit(href).path.strip("/")
-    parts = path.split("/")
-    if len(parts) != 2:
+    parsed = urlsplit(href.strip())
+    if parsed.scheme:
+        if parsed.scheme != "https" or parsed.netloc.casefold() != "github.com":
+            return None
+    elif parsed.netloc or not parsed.path.startswith("/"):
+        return None
+    if parsed.query or parsed.fragment:
         return None
 
-    owner, repository = ("".join(part.split()) for part in parts)
-    if not owner or not repository:
+    path = parsed.path
+    parts = path.split("/")
+    if len(parts) != 3 or parts[0] != "":
+        return None
+
+    owner, repository = (part.strip() for part in parts[1:])
+    if not _OWNER_RE.fullmatch(owner) or not _REPOSITORY_RE.fullmatch(repository):
+        return None
+    if any(character.isspace() for character in owner + repository):
         return None
     return f"{owner}/{repository}"
 
