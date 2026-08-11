@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import base64
+
+import responses
+
+from github_digest.models import TrendingRepo
+from github_digest.repository import API_ROOT, enrich_repository
+
+
+def _repository(**overrides: object) -> TrendingRepo:
+    values: dict[str, object] = {
+        "rank": 1,
+        "full_name": "openai/codex",
+        "url": "https://github.com/openai/codex",
+    }
+    values.update(overrides)
+    return TrendingRepo(**values)  # type: ignore[arg-type]
+
+
+@responses.activate
+def test_enrich_repository_applies_metadata_and_decoded_readme() -> None:
+    readme = "# Codex\n\nBuild with agents."
+    encoded_readme = base64.b64encode(readme.encode()).decode()
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": 123456, "language": "Rust", "description": "Coding agent"},
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex/readme",
+        json={"content": f"{encoded_readme[:12]}\n{encoded_readme[12:]}", "encoding": "base64"},
+        status=200,
+    )
+    repository = _repository()
+
+    result = enrich_repository(repository, "secret-token")
+
+    assert result is repository
+    assert repository.stars == 123456
+    assert repository.language == "Rust"
+    assert repository.description == "Coding agent"
+    assert repository.readme == readme
+
+
+@responses.activate
+def test_enrich_repository_keeps_metadata_when_readme_is_not_found() -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": 8, "language": "Python", "description": "A repository"},
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    repository = _repository(readme="stale")
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.stars == 8
+    assert repository.language == "Python"
+    assert repository.description == "A repository"
+    assert repository.readme == ""
+
+
+@responses.activate
+def test_enrich_repository_uses_existing_or_default_metadata_for_null_fields() -> None:
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": "not-a-number", "language": None, "description": None},
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    existing = _repository(stars=42, language="Go", description="Existing")
+
+    enrich_repository(existing, "secret-token")
+
+    assert existing.stars == 0
+    assert existing.language == "Go"
+    assert existing.description == "Existing"
+
+    responses.reset()
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex",
+        json={"stargazers_count": None, "language": None, "description": None},
+        status=200,
+    )
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+    empty = _repository(language="", description="")
+
+    enrich_repository(empty, "secret-token")
+
+    assert empty.stars == 0
+    assert empty.language == "Unknown"
+    assert empty.description == ""
+
+
+@responses.activate
+def test_enrich_repository_sends_required_headers_and_timeout(monkeypatch) -> None:
+    import github_digest.repository as repository_module
+
+    requests: list[dict[str, object]] = []
+    real_get = repository_module.requests.get
+
+    def recording_get(*args: object, **kwargs: object):
+        requests.append(dict(kwargs))
+        return real_get(*args, **kwargs)
+
+    monkeypatch.setattr(repository_module.requests, "get", recording_get)
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex", json={}, status=200)
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex/readme", status=404)
+
+    enrich_repository(_repository(), "secret-token")
+
+    assert len(responses.calls) == 2
+    for call in responses.calls:
+        assert call.request.headers["Accept"] == "application/vnd.github+json"
+        assert call.request.headers["Authorization"] == "Bearer secret-token"
+        assert call.request.headers["X-GitHub-Api-Version"] == "2022-11-28"
+        assert call.request.headers["User-Agent"] == "github-trending-daily/0.1"
+    assert [request["timeout"] for request in requests] == [20, 20]
