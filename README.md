@@ -36,6 +36,8 @@ AI 摘要按以下顺序降级：
 
 某个 AI 服务网络异常、鉴权失败、响应格式无效或摘要质量不合格时，会自动尝试下一个服务。GitHub Models 直接使用 Actions 内置的 `GITHUB_TOKEN` 和 `models: read` 权限，不需要创建额外 Secret。
 
+为生成摘要，仓库名称、描述和截取后的 README 内容会发送给 Gemini、GitHub Models 或 DeepSeek。请在启用工作流前确认这符合你的数据处理要求；公开仓库的数据仍会由这些第三方服务处理。
+
 ## 必需的 GitHub Actions Secrets
 
 在仓库的 **Settings → Secrets and variables → Actions → New repository secret** 中配置：
@@ -81,8 +83,8 @@ alice@example.com,bob@example.com,team@example.org
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[test]'
+python -m pip install -r requirements-lock.txt
+python -m pip install --no-deps -e .
 python -m pytest
 ```
 
@@ -102,20 +104,28 @@ github-trending-digest
 
 ## 第一次手动运行
 
-完成 Secrets 配置后：
+完成 Secrets 配置后，先在 **Settings → Actions → General → Workflow permissions** 中选择 **Read and write permissions**。如果默认分支受保护，还必须允许 `github-actions[bot]` 直接推送工作流生成的历史提交；否则邮件可能已经发送成功，但发布历史的步骤仍会失败。
+
+然后执行第一次运行：
 
 1. 打开仓库的 **Actions** 页面。
 2. 选择 **GitHub Trending Daily Digest**。
-3. 点击 **Run workflow**，选择默认分支并确认运行。
-4. 查看测试、生成与发送、历史提交三个步骤的日志，并确认收件箱收到日报。
+3. 点击 **Run workflow**，选择默认分支，保持 `force_resend` 未选中并确认运行。
+4. 查看测试、生成与发送、历史提交与推送步骤的日志，并确认收件箱收到日报。
 
 工作流会明确检出默认分支；即使手动触发时选择了其他 ref，日报历史也只会写回默认分支。
 
+同一上海日期的 `reports/history/YYYY-MM-DD.json` 已存在时，定时运行和普通手动运行都会明确记录原因并跳过发送，避免重复邮件。确实需要重发时，手动执行 **Run workflow** 并选中 `force_resend`；这会再次发送邮件并覆盖当天报告，只有文件内容变化时才产生新的历史提交。
+
+Fork 不会继承上游仓库的 Secrets。Fork 使用者需要自行启用 Actions 和定时工作流、配置自己的全部 Secrets，并授予自己的工作流写权限；不要期待上游的凭据、邮件收件人或定时任务自动生效。
+
 ## 定时、时区与可能延迟
 
-工作流使用 `0 0 * * *`，即每天 **00:00 UTC** 触发，对应 **Asia/Shanghai 08:00**。GitHub Actions 的 cron 使用 UTC，不会读取操作系统时区。
+工作流使用 `0 0 * * *`，即每天 **00:00 UTC** 触发，对应 **Asia/Shanghai 08:00**。GitHub Actions 的 cron 使用 UTC，不会读取操作系统时区。任务运行时会用 `Asia/Shanghai` 重新计算当天日期，以决定是否已经发送。
 
-GitHub 托管的定时任务可能因平台排队、维护或高峰负载延迟数分钟甚至更久；08:00 是计划触发时间，不是严格送达保证。可以随时通过 **Run workflow** 补跑。工作流设置了 15 分钟超时，同一时间只允许一个 `github-trending-daily` 任务运行，已运行任务不会被新任务取消。
+cron 位于整点的第 0 分钟，属于 GitHub Actions 较繁忙的触发时段。托管平台可能因排队、维护或高峰负载延迟数分钟甚至更久，也可能丢弃某次计划运行；08:00 是计划触发时间，不是严格送达保证。长期无仓库活动时，GitHub 还可能自动禁用计划任务。应定期检查 Actions 运行记录，缺失时通过 **Run workflow** 补跑并确认计划任务仍已启用。
+
+工作流设置了 30 分钟超时。同一时间只允许一个 `github-trending-daily` 任务运行，已运行任务不会被新任务取消；排队中的后续任务会在前一个任务结束后再执行，并由同日历史检查避免重复发送。
 
 ## 历史文件
 
@@ -126,15 +136,17 @@ reports/history/YYYY-MM-DD.json
 reports/history/YYYY-MM-DD.md
 ```
 
-JSON 保存完整结构化数据，包括生成时间、榜单范围、仓库字段、摘要来源和连续上榜天数；Markdown 便于直接在 GitHub 阅读。连续上榜天数只参考紧邻前一天的有效 JSON 报告，缺失、损坏或日期不连续时从 1 天重新计算。
+JSON 保存完整结构化数据，包括生成时间、榜单范围、仓库字段、摘要来源和连续上榜天数；Markdown 便于直接在 GitHub 阅读。生成的报告历史会提交进仓库，任何拥有该仓库读取权限的人都能看到这些内容；在公开仓库中，这意味着任何人都可读取。连续上榜天数只参考紧邻前一天的有效 JSON 报告，缺失、损坏或日期不连续时从 1 天重新计算。
 
-GitHub Actions 只执行 `git add -- reports/history`，没有历史变化时正常退出，不会产生空提交。推送发生冲突时会有限次数拉取并 rebase；无法安全合并时任务失败，不会强制覆盖远端更新。
+GitHub Actions 只执行 `git add -- reports/history`，没有历史变化时正常退出，不会产生空提交。检出步骤不会持久保存凭据；只有发布步骤通过 Actions 内置令牌临时认证。推送发生冲突时会有限次数拉取并 rebase；无法安全合并时任务失败，不会强制覆盖远端更新。
 
 ## 正常与失败行为
 
-正常情况下，测试先通过，然后抓取、摘要、发送邮件并保存历史。只有 `github-trending-digest` 成功退出后，工作流才会提交历史文件。
+正常情况下，依赖安装和测试先通过，再检查当天是否已有历史；需要运行时才会抓取、摘要、发送邮件并保存历史。只有 `github-trending-digest` 成功退出后，工作流才会提交历史文件。
 
-任一主要阶段失败时，程序会尝试向 `MAIL_TO` 发送主题为“GitHub 热榜日报运行异常”的故障邮件，其中包含失败阶段、尝试次数、已脱敏错误、可能原因和当前 Actions 运行链接。故障运行返回非零状态，不会提交新的历史报告。
+进入应用后，任一主要阶段失败时，程序会尝试向 `MAIL_TO` 发送主题为“GitHub 热榜日报运行异常”的故障邮件，其中包含失败阶段、尝试次数、已脱敏错误、可能原因和当前 Actions 运行链接。故障运行返回非零状态，不会提交新的历史报告。
+
+依赖安装、测试、应用错误处理接管前发现的缺失 Secret、任务超时等“应用运行之前或边界之外”的失败，可能只出现在 Actions 日志中。正常邮件发送完成后的提交、认证、分支保护或推送失败也只能从 Actions 日志确认，因为应用此时已经结束。只有应用内部捕获的错误才会在 Gmail 可用时发送异常日报。
 
 有两个需要注意的边界情况：
 
@@ -164,11 +176,12 @@ GitHub Actions 只执行 `git add -- reports/history`，没有历史变化时正
 
 ### 查看 GitHub Actions 日志
 
-进入 **Actions → GitHub Trending Daily Digest → 对应运行**，按步骤检查：依赖安装、完整测试、生成与发送、历史提交。故障邮件中的 Actions 链接也会指向对应运行。若历史推送失败，重点查看是否存在分支保护、`contents: write` 权限被组织策略覆盖，或远端更新导致 rebase 冲突。
+进入 **Actions → GitHub Trending Daily Digest → 对应运行**，按步骤检查：依赖安装、完整测试、同日历史判断、生成与发送、历史提交与推送。故障邮件中的 Actions 链接也会指向对应运行。若历史推送失败，重点检查仓库是否选择 **Read and write permissions**、分支保护是否允许 `github-actions[bot]`、`contents: write` 是否被组织策略覆盖，或远端更新是否导致 rebase 冲突。
 
 ## 安全说明
 
 - 永远不要在代码、README、Issue、PR、提交信息、测试数据或 Actions 日志中输出真实 Secret。
 - 使用 GitHub Actions Secrets 保存凭据，并定期轮换 API 密钥和 Gmail 应用专用密码。
+- 了解数据边界：仓库描述和 README 会发送给所选 AI 提供方，提交后的报告对所有拥有仓库读取权限的人可见。
 - 不要在命令中启用会回显环境变量值的调试模式，例如在加载真实 Secret 后执行 `set -x`。
 - 如怀疑 Secret 泄露，应立即在对应服务撤销并重新生成，而不只是从 Git 历史中删除文本。

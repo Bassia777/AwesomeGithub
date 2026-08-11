@@ -1,0 +1,19 @@
+# Exact dependency set for the Ubuntu GitHub Actions job on Python 3.12.
+# Includes declared runtime/test dependencies and their transitive dependencies.
+beautifulsoup4==4.15.0
+certifi==2026.7.22
+charset-normalizer==3.4.9
+idna==3.18
+iniconfig==2.3.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==8.4.2
+PyYAML==6.0.3
+requests==2.34.2
+responses==0.26.2
+soupsieve==2.9.2
+typing_extensions==4.16.0
+urllib3==2.7.0
