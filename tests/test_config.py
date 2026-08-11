@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import get_type_hints
+
 import pytest
 
 from github_digest.config import ConfigError, load_config, parse_recipients
+from github_digest.models import DailyReport, FailureReport, TrendingRepo
 
 
 def test_parse_recipients_returns_one_valid_address() -> None:
@@ -49,3 +52,16 @@ def test_load_config_reads_credentials_and_applies_defaults(monkeypatch: pytest.
     assert config.timezone == "Asia/Shanghai"
     assert config.top_count == 5
     assert config.history_dir == "reports/history"
+
+
+def test_report_contracts_use_string_timestamps_and_serialize_repositories() -> None:
+    report = DailyReport(
+        report_date="2026-08-11",
+        generated_at="2026-08-11T09:00:00+08:00",
+        repositories=[TrendingRepo(rank=1, full_name="owner/repo", url="https://example.com")],
+    )
+
+    assert get_type_hints(DailyReport)["report_date"] is str
+    assert get_type_hints(DailyReport)["generated_at"] is str
+    assert get_type_hints(FailureReport)["generated_at"] is str
+    assert report.to_dict()["repositories"] == [TrendingRepo(1, "owner/repo", "https://example.com").to_dict()]
