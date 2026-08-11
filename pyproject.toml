@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=75", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,15 +8,15 @@ version = "0.1.0"
 description = "Daily GitHub Trending email digest"
 requires-python = ">=3.12"
 dependencies = [
-    "beautifulsoup4",
-    "jinja2",
-    "requests",
+    "beautifulsoup4>=4.12,<5",
+    "jinja2>=3.1,<4",
+    "requests>=2.32,<3",
 ]
 
 [project.optional-dependencies]
 test = [
-    "pytest",
-    "responses",
+    "pytest>=8.3,<9",
+    "responses>=0.25,<1",
 ]
 
 [project.scripts]

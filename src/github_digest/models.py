@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
 
 
 @dataclass(slots=True)
@@ -23,8 +22,8 @@ class TrendingRepo:
 
 @dataclass(slots=True)
 class DailyReport:
-    report_date: date
-    generated_at: datetime
+    report_date: str
+    generated_at: str
     scope: str = "global/all-languages/daily"
     repositories: list[TrendingRepo] = field(default_factory=list)
 
@@ -39,7 +38,7 @@ class DailyReport:
 
 @dataclass(slots=True)
 class FailureReport:
-    generated_at: datetime
+    generated_at: str
     stage: str
     attempts: int
     error: str

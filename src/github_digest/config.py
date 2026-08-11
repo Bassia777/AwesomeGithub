@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from pathlib import Path
 
 
 class ConfigError(ValueError):
@@ -46,7 +45,7 @@ class Config:
     github_token: str
     timezone: str = "Asia/Shanghai"
     top_count: int = 5
-    history_dir: Path = Path("reports/history")
+    history_dir: str = "reports/history"
 
 
 def load_config() -> Config:

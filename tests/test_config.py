@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from github_digest.config import ConfigError, load_config, parse_recipients
@@ -50,4 +48,4 @@ def test_load_config_reads_credentials_and_applies_defaults(monkeypatch: pytest.
     assert config.github_token == "github-token"
     assert config.timezone == "Asia/Shanghai"
     assert config.top_count == 5
-    assert config.history_dir == Path("reports/history")
+    assert config.history_dir == "reports/history"
