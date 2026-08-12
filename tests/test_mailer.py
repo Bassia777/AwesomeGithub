@@ -25,7 +25,7 @@ def test_send_html_email_delivers_private_utf8_multipart_messages() -> None:
             "<h1>今日趋势：你好</h1>",
         )
 
-    smtp_ssl.assert_called_once_with("smtp.gmail.com", 465, timeout=30)
+    smtp_ssl.assert_called_once_with("smtp.qq.com", 465, timeout=30)
     smtp_client.login.assert_called_once_with("digest@example.com", password)
     assert smtp_client.send_message.call_count == 2
     for call, recipient in zip(smtp_client.send_message.call_args_list, recipients, strict=True):

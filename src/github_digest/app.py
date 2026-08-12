@@ -122,8 +122,8 @@ def run(config: Config) -> int:
 
         stage = "日报邮件发送"
         send_html_email(
-            config.gmail_username,
-            config.gmail_app_password,
+            config.qq_email_username,
+            config.qq_email_auth_code,
             config.recipients,
             f"{_NORMAL_SUBJECT_PREFIX} - {report.report_date}",
             html,
@@ -156,8 +156,8 @@ def run(config: Config) -> int:
         try:
             failure_html = render_failure(failure)
             send_html_email(
-                config.gmail_username,
-                config.gmail_app_password,
+                config.qq_email_username,
+                config.qq_email_auth_code,
                 config.recipients,
                 _FAILURE_SUBJECT,
                 failure_html,
@@ -187,8 +187,8 @@ def _sanitize_error(error: Exception, config: Config) -> str:
         message = type(error).__name__
 
     sensitive_values = {
-        config.gmail_username,
-        config.gmail_app_password,
+        config.qq_email_username,
+        config.qq_email_auth_code,
         config.gemini_api_key,
         config.deepseek_api_key,
         config.github_token,
@@ -227,7 +227,7 @@ def _likely_causes(stage: str) -> tuple[str, ...]:
     if stage == "日报渲染":
         return ("日报数据不完整或模板渲染异常",)
     if stage == "日报邮件发送":
-        return ("SMTP 网络、Gmail 鉴权或收件人配置异常",)
+        return ("SMTP 网络、QQ 邮箱鉴权或收件人配置异常",)
     if stage == "历史报告保存":
         return ("历史报告目录权限、磁盘空间或文件发布异常",)
     return ("运行环境或配置异常",)

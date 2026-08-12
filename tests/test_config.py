@@ -32,8 +32,8 @@ def test_parse_recipients_raises_config_error_when_no_valid_entries() -> None:
 
 def test_load_config_reads_credentials_and_applies_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     environment = {
-        "GMAIL_USERNAME": "digest@example.com",
-        "GMAIL_APP_PASSWORD": "app-password",
+        "QQ_EMAIL_USERNAME": "sender@qq.com",
+        "QQ_EMAIL_AUTH_CODE": "auth-code",
         "MAIL_TO": "first@example.com, SECOND@example.com",
         "GEMINI_API_KEY": "gemini-key",
         "DEEPSEEK_API_KEY": "deepseek-key",
@@ -44,8 +44,8 @@ def test_load_config_reads_credentials_and_applies_defaults(monkeypatch: pytest.
 
     config = load_config()
 
-    assert config.gmail_username == "digest@example.com"
-    assert config.gmail_app_password == "app-password"
+    assert config.qq_email_username == "sender@qq.com"
+    assert config.qq_email_auth_code == "auth-code"
     assert config.recipients == ("first@example.com", "SECOND@example.com")
     assert config.gemini_api_key == "gemini-key"
     assert config.deepseek_api_key == "deepseek-key"
@@ -58,8 +58,8 @@ def test_load_config_reads_credentials_and_applies_defaults(monkeypatch: pytest.
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("GMAIL_USERNAME", None),
-        ("GMAIL_APP_PASSWORD", "   "),
+        ("QQ_EMAIL_USERNAME", None),
+        ("QQ_EMAIL_AUTH_CODE", "   "),
         ("MAIL_TO", None),
         ("GEMINI_API_KEY", "   "),
         ("DEEPSEEK_API_KEY", None),
@@ -70,8 +70,8 @@ def test_load_config_rejects_each_missing_or_blank_required_value(
     monkeypatch: pytest.MonkeyPatch, name: str, value: str | None
 ) -> None:
     required_values = {
-        "GMAIL_USERNAME": "digest@example.com",
-        "GMAIL_APP_PASSWORD": "app-password",
+        "QQ_EMAIL_USERNAME": "sender@qq.com",
+        "QQ_EMAIL_AUTH_CODE": "auth-code",
         "MAIL_TO": "recipient@example.com",
         "GEMINI_API_KEY": "gemini-key",
         "DEEPSEEK_API_KEY": "deepseek-key",
@@ -92,8 +92,8 @@ def test_config_is_frozen_and_excludes_secrets_from_its_repr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     secrets = {
-        "GMAIL_USERNAME": "digest@example.com",
-        "GMAIL_APP_PASSWORD": "super-secret-gmail-password",
+        "QQ_EMAIL_USERNAME": "sender@qq.com",
+        "QQ_EMAIL_AUTH_CODE": "super-secret-qq-auth-code",
         "MAIL_TO": "recipient@example.com",
         "GEMINI_API_KEY": "super-secret-gemini-key",
         "DEEPSEEK_API_KEY": "super-secret-deepseek-key",
@@ -107,7 +107,7 @@ def test_config_is_frozen_and_excludes_secrets_from_its_repr(
     with pytest.raises(FrozenInstanceError):
         config.timezone = "UTC"  # type: ignore[misc]
     for secret in (
-        secrets["GMAIL_APP_PASSWORD"],
+        secrets["QQ_EMAIL_AUTH_CODE"],
         secrets["GEMINI_API_KEY"],
         secrets["DEEPSEEK_API_KEY"],
         secrets["GITHUB_TOKEN"],

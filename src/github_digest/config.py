@@ -37,8 +37,8 @@ def _required(name: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Config:
-    gmail_username: str
-    gmail_app_password: str = field(repr=False)
+    qq_email_username: str
+    qq_email_auth_code: str = field(repr=False)
     recipients: tuple[str, ...]
     gemini_api_key: str = field(repr=False)
     deepseek_api_key: str = field(repr=False)
@@ -51,8 +51,8 @@ class Config:
 def load_config() -> Config:
     """Load required credentials and recipients from environment variables."""
     return Config(
-        gmail_username=_required("GMAIL_USERNAME"),
-        gmail_app_password=_required("GMAIL_APP_PASSWORD"),
+        qq_email_username=_required("QQ_EMAIL_USERNAME"),
+        qq_email_auth_code=_required("QQ_EMAIL_AUTH_CODE"),
         recipients=tuple(parse_recipients(_required("MAIL_TO"))),
         gemini_api_key=_required("GEMINI_API_KEY"),
         deepseek_api_key=_required("DEEPSEEK_API_KEY"),

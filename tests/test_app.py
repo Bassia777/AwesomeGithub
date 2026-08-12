@@ -30,8 +30,8 @@ class FixedDateTime:
 @pytest.fixture
 def config(tmp_path) -> Config:
     return Config(
-        gmail_username="digest@example.com",
-        gmail_app_password="gmail-password-secret",
+        qq_email_username="sender@qq.com",
+        qq_email_auth_code="qq-auth-secret",
         recipients=("reader@example.com",),
         gemini_api_key="gemini-key-secret",
         deepseek_api_key="deepseek-key-secret",
@@ -361,8 +361,8 @@ def test_alert_failure_raises_safe_exception_without_secret_exception_chains(
     monkeypatch.setattr(app, "datetime", FixedDateTime)
     primary_raw_message = "primary raw failure: " + " | ".join(
         (
-            config.gmail_username,
-            config.gmail_app_password,
+            config.qq_email_username,
+            config.qq_email_auth_code,
             config.recipients[0],
             config.gemini_api_key,
             config.deepseek_api_key,
@@ -416,8 +416,8 @@ def test_alert_failure_raises_safe_exception_without_secret_exception_chains(
         primary_raw_message,
         secondary_raw_message,
         private_alert_recipient,
-        config.gmail_username,
-        config.gmail_app_password,
+        config.qq_email_username,
+        config.qq_email_auth_code,
         *config.recipients,
         config.gemini_api_key,
         config.deepseek_api_key,
@@ -614,8 +614,8 @@ def test_failure_error_sanitizer_removes_configured_credentials_and_tokens(
 ) -> None:
     monkeypatch.setattr(app, "datetime", FixedDateTime)
     secrets = (
-        config.gmail_username,
-        config.gmail_app_password,
+        config.qq_email_username,
+        config.qq_email_auth_code,
         config.gemini_api_key,
         config.deepseek_api_key,
         config.github_token,

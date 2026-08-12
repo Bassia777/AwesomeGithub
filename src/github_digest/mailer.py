@@ -83,12 +83,12 @@ def send_html_email(
     subject: str,
     html: str,
 ) -> None:
-    """Send an HTML digest via Gmail's SSL SMTP endpoint."""
+    """Send an HTML digest via QQ Mail's SSL SMTP endpoint."""
     _validate_inputs(username, app_password, recipients, subject, html)
     sender = _canonical_address(username, "Invalid sender email address")
     unique_recipients = _canonical_recipients(recipients)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp_client:
+    with smtplib.SMTP_SSL("smtp.qq.com", 465, timeout=30) as smtp_client:
         smtp_client.login(sender, app_password)
         for recipient in unique_recipients:
             smtp_client.send_message(

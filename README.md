@@ -1,6 +1,6 @@
 # GitHub Trending 每日中文摘要
 
-本项目每天抓取 GitHub Trending 全球、全语言日榜的前 5 个仓库，补充仓库信息，生成简体中文摘要，并通过 Gmail SMTP 发送 HTML 邮件。成功发送后，它会把当天的 Markdown 和 JSON 报告保存到仓库，供长期查询和连续上榜天数计算。
+本项目每天抓取 GitHub Trending 全球、全语言日榜的前 5 个仓库，补充仓库信息，生成简体中文摘要，并通过 QQ 邮箱 SMTP 发送 HTML 邮件。成功发送后，它会把当天的 Markdown 和 JSON 报告保存到仓库，供长期查询和连续上榜天数计算。
 
 ## 运行行为
 
@@ -23,7 +23,7 @@
 - `repository`：通过 GitHub API 补充仓库资料。
 - `summarizer`：调用 AI 服务并校验中文摘要。
 - `renderer`：生成 HTML 邮件和 Markdown 历史报告。
-- `mailer`：通过 `smtp.gmail.com:465` 分别投递邮件。
+- `mailer`：通过 `smtp.qq.com:465` 分别投递邮件。
 - `history`：读取连续上榜信息并安全保存 JSON/Markdown 文件。
 - `app`：组织上述步骤，并在异常时发送故障通知。
 
@@ -46,8 +46,8 @@ AI 摘要按以下顺序降级：
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API 密钥 |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 |
-| `GMAIL_USERNAME` | 用于发信的完整 Gmail 地址，例如 `digest.sender@gmail.com` |
-| `GMAIL_APP_PASSWORD` | Gmail 应用专用密码，不是 Google 账号登录密码 |
+| `QQ_EMAIL_USERNAME` | 用于发信的完整 QQ 邮箱地址，例如 `digest.sender@qq.com` |
+| `QQ_EMAIL_AUTH_CODE` | QQ 邮箱生成的 SMTP 授权码，不是 QQ 登录密码 |
 | `MAIL_TO` | 一个或多个收件地址，多个地址使用英文逗号分隔 |
 
 当前配置校验要求以上 Secret 均为非空值。`GITHUB_TOKEN` 由 GitHub Actions 自动提供，请勿自行创建同名 Secret。
@@ -66,15 +66,15 @@ alice@example.com,bob@example.com,team@example.org
 
 多个收件人会收到彼此独立的私密邮件；每封邮件的 `To` 只包含当前收件人，因此收件人互相看不到地址。重复地址会按不区分大小写的方式去重。
 
-## 配置 Gmail 应用专用密码
+## 配置 QQ 邮箱 SMTP 授权码
 
 1. 登录用于发信的 Google 账号，并启用两步验证。
 2. 打开 Google 账号的“应用专用密码”页面。
 3. 为本项目新建一个应用专用密码，例如命名为 `GitHub Trending Daily`。
-4. 将生成的应用专用密码保存为仓库 Secret `GMAIL_APP_PASSWORD`，将完整 Gmail 地址保存为 `GMAIL_USERNAME`。
+4. 将生成的 SMTP 授权码保存为仓库 Secret `QQ_EMAIL_AUTH_CODE`，将完整 QQ 邮箱地址保存为 `QQ_EMAIL_USERNAME`。
 5. 如果 Google Workspace 管理员禁用了应用专用密码，需要先联系管理员启用，或改用允许 SMTP 应用登录的账号。
 
-不要在 Issue、提交、日志或聊天中提供真实密码和密钥。本项目的配置过程不需要任何人查看你的真实 Gmail 密码或应用专用密码。
+不要在 Issue、提交、日志或聊天中提供真实密码和密钥。本项目的配置过程不需要任何人查看你的真实 QQ 邮箱 密码或应用专用密码。
 
 ## 本地安装与测试
 
@@ -94,8 +94,8 @@ python -m pytest
 export GITHUB_TOKEN='<github-token>'
 export GEMINI_API_KEY='<gemini-api-key>'
 export DEEPSEEK_API_KEY='<deepseek-api-key>'
-export GMAIL_USERNAME='digest.sender@gmail.com'
-export GMAIL_APP_PASSWORD='<gmail-app-password>'
+export QQ_EMAIL_USERNAME='digest.sender@qq.com'
+export QQ_EMAIL_AUTH_CODE='<qq-smtp-auth-code>'
 export MAIL_TO='reader@example.com'
 github-trending-digest
 ```
@@ -146,21 +146,21 @@ GitHub Actions 只执行 `git add -- reports/history`，没有历史变化时正
 
 进入应用后，任一主要阶段失败时，程序会尝试向 `MAIL_TO` 发送主题为“GitHub 热榜日报运行异常”的故障邮件，其中包含失败阶段、尝试次数、已脱敏错误、可能原因和当前 Actions 运行链接。故障运行返回非零状态，不会提交新的历史报告。
 
-依赖安装、测试、应用错误处理接管前发现的缺失 Secret、任务超时等“应用运行之前或边界之外”的失败，可能只出现在 Actions 日志中。正常邮件发送完成后的提交、认证、分支保护或推送失败也只能从 Actions 日志确认，因为应用此时已经结束。只有应用内部捕获的错误才会在 Gmail 可用时发送异常日报。
+依赖安装、测试、应用错误处理接管前发现的缺失 Secret、任务超时等“应用运行之前或边界之外”的失败，可能只出现在 Actions 日志中。正常邮件发送完成后的提交、认证、分支保护或推送失败也只能从 Actions 日志确认，因为应用此时已经结束。只有应用内部捕获的错误才会在 QQ 邮箱 可用时发送异常日报。
 
 有两个需要注意的边界情况：
 
 - 正常日报发送成功、但历史保存失败时，收件人仍会收到日报，随后还会收到故障通知；工作流失败且不会提交不完整历史。
-- Gmail 登录或 SMTP 本身不可用时，故障通知也可能无法发送，此时应以 GitHub Actions 日志为准。
+- QQ 邮箱 登录或 SMTP 本身不可用时，故障通知也可能无法发送，此时应以 GitHub Actions 日志为准。
 
 ## 故障排查
 
-### SMTP 或 Gmail 鉴权失败
+### SMTP 或 QQ 邮箱 鉴权失败
 
-- 确认 `GMAIL_USERNAME` 是完整 Gmail 地址，且与创建应用专用密码的账号一致。
+- 确认 `QQ_EMAIL_USERNAME` 是完整 QQ 邮箱地址，且与生成 SMTP 授权码的账号一致。
 - 确认使用的是应用专用密码，而不是 Google 账号登录密码；复制时避免多余空格。
 - 确认账号已开启两步验证，Workspace 策略允许应用专用密码。
-- 检查 Gmail 是否拒绝登录、收件地址是否有效，以及网络是否能访问 `smtp.gmail.com:465`。
+- 检查 QQ 邮箱是否拒绝登录、收件地址是否有效，以及网络是否能访问 `smtp.qq.com:465`。
 - 修改 Secret 后重新执行 **Run workflow**，不要把 Secret 值打印到日志。
 
 ### Trending 页面结构变化
@@ -181,7 +181,7 @@ GitHub Actions 只执行 `git add -- reports/history`，没有历史变化时正
 ## 安全说明
 
 - 永远不要在代码、README、Issue、PR、提交信息、测试数据或 Actions 日志中输出真实 Secret。
-- 使用 GitHub Actions Secrets 保存凭据，并定期轮换 API 密钥和 Gmail 应用专用密码。
+- 使用 GitHub Actions Secrets 保存凭据，并定期轮换 API 密钥和 QQ 邮箱 SMTP 授权码。
 - 了解数据边界：仓库描述和 README 会发送给所选 AI 提供方，提交后的报告对所有拥有仓库读取权限的人可见。
 - 不要在命令中启用会回显环境变量值的调试模式，例如在加载真实 Secret 后执行 `set -x`。
 - 如怀疑 Secret 泄露，应立即在对应服务撤销并重新生成，而不只是从 Git 历史中删除文本。
