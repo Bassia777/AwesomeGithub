@@ -29,7 +29,7 @@ Provider: TypeAlias = tuple[str, ProviderCallable]
 REQUEST_TIMEOUT_SECONDS = 45  # Per-request timeout; there is no global deadline.
 _CJK_CHARACTER = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 _MINIMUM_CJK_CHARACTERS = 4
-_MINIMUM_CJK_RATIO = 0.30
+_MINIMUM_CJK_RATIO = 0.80
 _REFUSAL_OR_IGNORE_PHRASES = (
     "无法完成该请求",
     "不能协助",

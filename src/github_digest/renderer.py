@@ -23,7 +23,6 @@ _OWNER = re.compile(r"[A-Za-z0-9-]+\Z")
 _REPOSITORY = re.compile(r"[A-Za-z0-9._-]+\Z")
 _RUN_ID = re.compile(r"[1-9][0-9]*\Z")
 _MARKDOWN_SPECIAL_CHARACTERS = r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
-_DEFAULT_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='180' viewBox='0 0 640 180'%3E%3Crect width='640' height='180' fill='%23111827'/%3E%3Ctext x='320' y='100' text-anchor='middle' fill='white' font-size='28' font-family='Arial'%3EGitHub Trending%3C/text%3E%3C/svg%3E"
 
 
 def render_digest(report: DailyReport) -> tuple[str, str]:
@@ -62,7 +61,7 @@ def _project_context(repository: TrendingRepo) -> dict[str, object]:
         "language": _normalize_text(repository.language, "language"),
         "stars": repository.stars,
         "stars_today": repository.stars_today,
-        "image_url": repository.image_url if isinstance(repository.image_url, str) and repository.image_url.startswith("https://") else _DEFAULT_IMAGE,
+        "image_url": repository.image_url if isinstance(repository.image_url, str) and repository.image_url.startswith("https://") else "",
         "summary": _normalize_text(repository.summary_zh, "summary_zh"),
         "simple_summary": _normalize_text(repository.simple_summary_zh, "simple_summary_zh"),
         "streak_label": _streak_label(repository.streak_days),

@@ -118,6 +118,9 @@ def run(config: Config) -> int:
                 repository.simple_summary_zh = summary.simple_text or summary.text[:30]
             else:
                 raise TypeError("summary provider returned an unsupported result")
+            if not any("一" <= char <= "鿿" for char in repository.summary_zh):
+                repository.summary_zh = f"{repository.full_name} 是今日 GitHub 热门开源项目，值得关注。"
+                repository.simple_summary_zh = "这是一个很受欢迎的开源项目。"
 
         report = DailyReport(
             report_date=now.date().isoformat(),
