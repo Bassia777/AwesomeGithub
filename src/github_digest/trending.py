@@ -43,6 +43,7 @@ def parse_trending(html: str, top_count: int = 5) -> list[TrendingRepo]:
         description = _text_or_empty(article.select_one("p"))
         language = _text_or_empty(article.select_one("[itemprop='programmingLanguage']")) or "Unknown"
         stars_link = article.select_one("a[href$='/stargazers']")
+        daily_stars = _parse_daily_stars(_text_or_empty(article))
         repositories.append(
             TrendingRepo(
                 rank=len(repositories) + 1,
@@ -51,6 +52,7 @@ def parse_trending(html: str, top_count: int = 5) -> list[TrendingRepo]:
                 description=description,
                 language=language,
                 stars=_parse_stars(_text_or_empty(stars_link)),
+                stars_today=daily_stars,
             )
         )
         if len(repositories) == top_count:
@@ -110,6 +112,11 @@ def _normalise_full_name(href: str) -> str | None:
 def _parse_stars(value: str) -> int:
     digits = re.sub(r"[^0-9]", "", value)
     return int(digits) if digits else 0
+
+
+def _parse_daily_stars(value: str) -> int:
+    match = re.search(r"([\d,]+)\s+stars?\s+today", value, re.IGNORECASE)
+    return int(match.group(1).replace(",", "")) if match else 0
 
 
 def _text_or_empty(element: Tag | None) -> str:

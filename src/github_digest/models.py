@@ -11,9 +11,12 @@ class TrendingRepo:
     description: str = ""
     language: str = "Unknown"
     stars: int = 0
+    stars_today: int = field(default=0, compare=False)
     readme: str = ""
+    image_url: str = field(default="", compare=False)
     streak_days: int = 1
     summary_zh: str = ""
+    simple_summary_zh: str = field(default="", compare=False)
     summary_source: str = ""
 
     def to_dict(self) -> dict[str, object]:

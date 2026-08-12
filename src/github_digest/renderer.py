@@ -23,6 +23,7 @@ _OWNER = re.compile(r"[A-Za-z0-9-]+\Z")
 _REPOSITORY = re.compile(r"[A-Za-z0-9._-]+\Z")
 _RUN_ID = re.compile(r"[1-9][0-9]*\Z")
 _MARKDOWN_SPECIAL_CHARACTERS = r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
+_DEFAULT_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='180' viewBox='0 0 640 180'%3E%3Crect width='640' height='180' fill='%23111827'/%3E%3Ctext x='320' y='100' text-anchor='middle' fill='white' font-size='28' font-family='Arial'%3EGitHub Trending%3C/text%3E%3C/svg%3E"
 
 
 def render_digest(report: DailyReport) -> tuple[str, str]:
@@ -60,7 +61,10 @@ def _project_context(repository: TrendingRepo) -> dict[str, object]:
         "full_name": _normalize_text(repository.full_name, "full_name"),
         "language": _normalize_text(repository.language, "language"),
         "stars": repository.stars,
+        "stars_today": repository.stars_today,
+        "image_url": repository.image_url if isinstance(repository.image_url, str) and repository.image_url.startswith("https://") else _DEFAULT_IMAGE,
         "summary": _normalize_text(repository.summary_zh, "summary_zh"),
+        "simple_summary": _normalize_text(repository.simple_summary_zh, "simple_summary_zh"),
         "streak_label": _streak_label(repository.streak_days),
         "url": _canonical_repository_url(repository.url, identity),
     }
@@ -205,21 +209,27 @@ def _render_markdown(report_date: str, projects: list[dict[str, object]]) -> str
         full_name = project["full_name"]
         language = project["language"]
         stars = project["stars"]
+        stars_today = project["stars_today"]
         summary = project["summary"]
+        simple_summary = project["simple_summary"]
         assert url is None or isinstance(url, str)
         assert isinstance(streak_label, str)
         assert isinstance(rank, int)
         assert isinstance(full_name, str)
         assert isinstance(language, str)
         assert isinstance(stars, int)
+        assert isinstance(stars_today, int)
         assert isinstance(summary, str)
+        assert isinstance(simple_summary, str)
         escaped_name = _escape_markdown(full_name)
         lines.extend(
             [
                 f"## {rank}. [{escaped_name}]({url})" if url else f"## {rank}. {escaped_name}",
-                f"{streak_label} · {_escape_markdown(language)} · {stars:,} Stars",
+                f"{streak_label} · {_escape_markdown(language)} · {stars:,} Stars · 今日新增 {stars_today:,} Stars",
                 "",
                 _escape_markdown(summary),
+                "",
+                f"一句话总结：{_escape_markdown(simple_summary)}",
                 "",
             ]
         )

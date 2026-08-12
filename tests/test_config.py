@@ -141,9 +141,12 @@ def test_report_contracts_use_string_timestamps_and_serialize_repositories() -> 
         "description": "",
         "language": "Unknown",
         "stars": 0,
+        "stars_today": 0,
         "readme": "",
+        "image_url": "",
         "streak_days": 1,
         "summary_zh": "",
+        "simple_summary_zh": "",
         "summary_source": "",
     }
     assert report.to_dict() == {

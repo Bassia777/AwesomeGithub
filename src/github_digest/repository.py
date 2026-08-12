@@ -7,6 +7,7 @@ import binascii
 from typing import Any
 
 import requests
+import re
 
 from github_digest.models import TrendingRepo
 
@@ -40,6 +41,7 @@ def enrich_repository(repository: TrendingRepo, token: str) -> TrendingRepo:
         return repository
     if readme_response.ok:
         repository.readme = _decode_readme(_json_object(readme_response))
+        repository.image_url = _first_readme_image(repository.readme, repository.url)
     return repository
 
 
@@ -83,3 +85,15 @@ def _decode_readme(payload: dict[str, Any] | None) -> str:
         return base64.b64decode(encoded_content, validate=True).decode("utf-8", errors="replace")
     except (ValueError, binascii.Error):
         return ""
+
+
+def _first_readme_image(readme: str, repository_url: str) -> str:
+    if not isinstance(readme, str):
+        return ""
+    for match in re.finditer(r"!\[[^\]]*\]\(([^)]+)\)", readme):
+        candidate = match.group(1).strip().split()[0]
+        if candidate.startswith("https://"):
+            return candidate
+        if candidate.startswith("/"):
+            return f"https://github.com{candidate}"
+    return ""

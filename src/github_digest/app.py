@@ -18,6 +18,7 @@ from github_digest.models import DailyReport, FailureReport, TrendingRepo
 from github_digest.renderer import render_digest, render_failure
 from github_digest.repository import enrich_repository
 from github_digest.summarizer import (
+    SummaryResult,
     gemini_provider,
     openai_compatible_provider,
     summarize_with_fallback,
@@ -46,7 +47,7 @@ class AlertDeliveryError(RuntimeError):
         super().__init__(f"Failure alert delivery failed at {stage} ({category})")
 
 
-def summarize_repository(repository: TrendingRepo, config: Config) -> tuple[str, str]:
+def summarize_repository(repository: TrendingRepo, config: Config) -> SummaryResult:
     """Summarize one repository through the configured provider fallback chain."""
     providers = (
         ("Gemini", gemini_provider(config.gemini_api_key)),
@@ -70,7 +71,7 @@ def summarize_repository(repository: TrendingRepo, config: Config) -> tuple[str,
         ),
     )
     result = summarize_with_fallback(repository, providers)
-    return result.text, result.source
+    return result
 
 
 def run(config: Config) -> int:
@@ -107,9 +108,16 @@ def run(config: Config) -> int:
 
         stage = "AI 摘要生成"
         for repository in repositories:
-            repository.summary_zh, repository.summary_source = summarize_repository(
-                repository, config
-            )
+            summary = summarize_repository(repository, config)
+            if isinstance(summary, tuple):
+                repository.summary_zh, repository.summary_source = summary
+                repository.simple_summary_zh = repository.summary_zh[:30]
+            elif isinstance(summary, SummaryResult):
+                repository.summary_zh = summary.text
+                repository.summary_source = summary.source
+                repository.simple_summary_zh = summary.simple_text or summary.text[:30]
+            else:
+                raise TypeError("summary provider returned an unsupported result")
 
         report = DailyReport(
             report_date=now.date().isoformat(),
