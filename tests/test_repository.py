@@ -48,6 +48,24 @@ def test_enrich_repository_applies_metadata_and_decoded_readme() -> None:
 
 
 @responses.activate
+def test_enrich_repository_extracts_readme_html_images() -> None:
+    readme = '<p><img src="https://raw.githubusercontent.com/openai/codex/main/banner.png"></p>'
+    encoded_readme = base64.b64encode(readme.encode()).decode()
+    responses.add(responses.GET, f"{API_ROOT}/repos/openai/codex", json={}, status=200)
+    responses.add(
+        responses.GET,
+        f"{API_ROOT}/repos/openai/codex/readme",
+        json={"content": encoded_readme, "encoding": "base64"},
+        status=200,
+    )
+    repository = _repository()
+
+    enrich_repository(repository, "secret-token")
+
+    assert repository.image_url == "https://raw.githubusercontent.com/openai/codex/main/banner.png"
+
+
+@responses.activate
 def test_enrich_repository_keeps_metadata_when_readme_is_not_found() -> None:
     responses.add(
         responses.GET,

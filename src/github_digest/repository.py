@@ -96,4 +96,10 @@ def _first_readme_image(readme: str, repository_url: str) -> str:
             return candidate
         if candidate.startswith("/"):
             return f"https://github.com{candidate}"
+    for match in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', readme, re.IGNORECASE):
+        candidate = match.group(1).strip()
+        if candidate.startswith("https://"):
+            return candidate
+        if candidate.startswith("/"):
+            return f"https://github.com{candidate}"
     return ""

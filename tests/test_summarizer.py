@@ -28,6 +28,19 @@ def _repository(**overrides: object) -> TrendingRepo:
     return TrendingRepo(**values)  # type: ignore[arg-type]
 
 
+def test_summary_parser_accepts_fenced_json_with_chinese_detail_and_simple() -> None:
+    from github_digest.summarizer import _summary_from_payload
+
+    result = _summary_from_payload(
+        '~~~json\n{"detail":"这是一个帮助团队整理资料、减少重复工作的工具，适合需要高效协作的人。","simple":"它能帮大家更轻松地一起做事。"}\n~~~',
+        "DeepSeek",
+    )
+
+    assert result.source == "DeepSeek"
+    assert result.simple_text == "它能帮大家更轻松地一起做事。"
+    assert result.text.startswith("这是一个帮助团队")
+
+
 def test_summarize_uses_only_the_first_valid_provider() -> None:
     called: list[str] = []
 

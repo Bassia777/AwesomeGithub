@@ -185,8 +185,14 @@ def _gemini_text(response: requests.Response) -> str:
 
 def _summary_from_payload(text: str, source: str) -> SummaryResult:
     import json
+    cleaned = text.strip()
+    if cleaned.startswith("```") or cleaned.startswith("~~~"):
+        lines = cleaned.splitlines()[1:]
+        if lines and lines[-1].strip().startswith(("```", "~~~")):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
     try:
-        payload = json.loads(text)
+        payload = json.loads(cleaned)
         detail = payload["detail"].strip()
         simple = payload["simple"].strip()
         if not isinstance(detail, str) or not isinstance(simple, str):
