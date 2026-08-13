@@ -19,7 +19,7 @@
             <tr>
               <td valign="top" style="padding:20px 8px 20px 20px;width:36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;font-size:20px;font-weight:700;color:#2563eb;">{{ project.rank }}</td>
               <td valign="top" style="padding:20px 20px 20px 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">
-{% if project.image_url %}<img src="{{ project.image_url }}" alt="{{ project.full_name }} 项目配图" width="100%" style="display:block;max-width:560px;height:150px;object-fit:cover;margin:0 0 14px;border-radius:8px;">{% endif %}
+<img src="{{ project.image_url }}" alt="{{ project.full_name }} 项目配图" width="100%" style="display:block;width:100%;max-width:560px;height:180px;object-fit:cover;object-position:center;margin:0 0 14px;border-radius:8px;">
 {% if project.url %}
                 <h2 style="margin:0;"><a href="{{ project.url }}" style="color:#1d4ed8;font-size:18px;font-weight:700;line-height:1.4;text-decoration:none;">{{ project.full_name }}</a></h2>
 {% else %}

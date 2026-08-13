@@ -23,6 +23,7 @@ _OWNER = re.compile(r"[A-Za-z0-9-]+\Z")
 _REPOSITORY = re.compile(r"[A-Za-z0-9._-]+\Z")
 _RUN_ID = re.compile(r"[1-9][0-9]*\Z")
 _MARKDOWN_SPECIAL_CHARACTERS = r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
+FALLBACK_IMAGE_URLS = ("https://images.unsplash.com/photo-1558494949-ef010cbdcc31?w=1200&q=85", "https://images.unsplash.com/photo-1518770660439-4636190af475?w=1200&q=85", "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=1200&q=85", "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=1200&q=85", "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=1200&q=85")
 
 
 def render_digest(report: DailyReport) -> tuple[str, str]:
@@ -61,7 +62,7 @@ def _project_context(repository: TrendingRepo) -> dict[str, object]:
         "language": _normalize_text(repository.language, "language"),
         "stars": repository.stars,
         "stars_today": repository.stars_today,
-        "image_url": repository.image_url if isinstance(repository.image_url, str) and repository.image_url.startswith("https://") else "",
+        "image_url": FALLBACK_IMAGE_URLS[(repository.rank - 1) % len(FALLBACK_IMAGE_URLS)],
         "summary": _normalize_text(repository.summary_zh, "summary_zh"),
         "simple_summary": _normalize_text(repository.simple_summary_zh, "simple_summary_zh"),
         "streak_label": _streak_label(repository.streak_days),
