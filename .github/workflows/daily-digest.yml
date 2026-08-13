@@ -10,6 +10,11 @@ on:
         required: false
         type: boolean
         default: false
+      debug_ai_responses:
+        description: Print complete AI responses in the run log for debugging
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -79,6 +84,7 @@ jobs:
           QQ_EMAIL_USERNAME: ${{ secrets.QQ_EMAIL_USERNAME }}
           QQ_EMAIL_AUTH_CODE: ${{ secrets.QQ_EMAIL_AUTH_CODE }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          DEBUG_AI_RESPONSES: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_ai_responses == true && 'true' || 'false' }}
         run: github-trending-digest
 
       - name: Commit successful history

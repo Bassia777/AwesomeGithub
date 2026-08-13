@@ -41,6 +41,18 @@ def test_summary_parser_accepts_fenced_json_with_chinese_detail_and_simple() -> 
     assert result.text.startswith("这是一个帮助团队")
 
 
+def test_summary_parser_truncates_long_detail_with_ellipsis() -> None:
+    from github_digest.summarizer import _summary_from_payload
+
+    detail = "这是一个很有用的中文项目介绍。" * 30
+    result = _summary_from_payload(
+        '{"detail":"' + detail + '","simple":"简单总结"}', "DeepSeek"
+    )
+
+    assert len(result.text) <= 200
+    assert result.text.endswith("...")
+
+
 def test_summarize_uses_only_the_first_valid_provider() -> None:
     called: list[str] = []
 
