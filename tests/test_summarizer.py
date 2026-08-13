@@ -326,6 +326,15 @@ def test_summarize_rejects_non_chinese_and_refusal_like_results(text: str) -> No
     assert result == SummaryResult("An agentic coding tool.", "repository description")
 
 
+def test_summarize_accepts_chinese_detail_with_uppercase_technical_terms() -> None:
+    text = "diagram-design 是一个使用 HTML 和 SVG 的图表工具，帮助 AI 编程助手生成清晰图表，解决样式混乱和制作困难的问题。"
+    result = summarize_with_fallback(
+        _repository(), (("DeepSeek", lambda _: SummaryResult(text, "DeepSeek")),)
+    )
+    assert result.source == "DeepSeek"
+    assert result.text == text
+
+
 @pytest.mark.parametrize(
     ("text", "expected_source"),
     [

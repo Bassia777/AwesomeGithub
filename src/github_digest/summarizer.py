@@ -31,7 +31,7 @@ REQUEST_TIMEOUT_SECONDS = 45  # Per-request timeout; there is no global deadline
 MAX_DETAIL_CHARACTERS = 200
 _CJK_CHARACTER = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 _MINIMUM_CJK_CHARACTERS = 4
-_MINIMUM_CJK_RATIO = 0.80
+_MINIMUM_CJK_RATIO = 0.60
 _REFUSAL_OR_IGNORE_PHRASES = (
     "无法完成该请求",
     "不能协助",
@@ -144,9 +144,23 @@ def openai_compatible_provider(
 
 
 def _is_valid_summary(text: str) -> bool:
-    """Require at least four CJK characters and 30% CJK meaningful characters."""
+    """Require Chinese prose while ignoring all-uppercase technical acronyms."""
     normalized = text.casefold()
-    meaningful_characters = [character for character in text if character.isalnum()]
+    meaningful_characters: list[str] = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character.isascii() and character.isupper():
+            end = index + 1
+            while end < len(text) and text[end].isascii() and text[end].isalpha() and text[end].isupper():
+                end += 1
+            token = text[index:end]
+            if len(token) >= 2:
+                index = end
+                continue
+        if character.isalnum():
+            meaningful_characters.append(character)
+        index += 1
     cjk_count = sum(
         _CJK_CHARACTER.fullmatch(character) is not None for character in meaningful_characters
     )
