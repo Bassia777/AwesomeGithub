@@ -83,6 +83,11 @@ def test_first_readme_image_resolves_relative_asset_to_raw_github() -> None:
     )
 
 
+def test_first_readme_image_never_returns_badge_when_only_badges_exist() -> None:
+    readme = "![Stars](https://img.shields.io/github/stars/acme/demo)"
+    assert _first_readme_image(readme, "https://github.com/acme/demo") == ""
+
+
 @responses.activate
 def test_enrich_repository_keeps_metadata_when_readme_is_not_found() -> None:
     responses.add(

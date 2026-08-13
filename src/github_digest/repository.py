@@ -101,9 +101,7 @@ def _first_readme_image(readme: str, repository_url: str) -> str:
     for candidate in preferred:
         if "/assets/" in candidate or "/images/" in candidate or "/img/" in candidate:
             return candidate
-    if preferred:
-        return preferred[0]
-    return ""
+    return preferred[0] if preferred else ""
 
 
 def _resolve_readme_image(candidate: str, repository_url: str) -> str:
