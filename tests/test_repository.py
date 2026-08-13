@@ -8,6 +8,7 @@ import responses
 
 from github_digest.models import TrendingRepo
 from github_digest.repository import API_ROOT, enrich_repository
+from github_digest.repository import _first_readme_image
 
 
 def _repository(**overrides: object) -> TrendingRepo:
@@ -63,6 +64,23 @@ def test_enrich_repository_extracts_readme_html_images() -> None:
     enrich_repository(repository, "secret-token")
 
     assert repository.image_url == "https://raw.githubusercontent.com/openai/codex/main/banner.png"
+
+
+def test_first_readme_image_skips_badges_and_prefers_project_asset() -> None:
+    readme = (
+        "![Stars](https://img.shields.io/github/stars/acme/demo)\n"
+        "<img src=\"https://raw.githubusercontent.com/acme/demo/main/assets/product.png\">"
+    )
+    assert _first_readme_image(readme, "https://github.com/acme/demo") == (
+        "https://raw.githubusercontent.com/acme/demo/main/assets/product.png"
+    )
+
+
+def test_first_readme_image_resolves_relative_asset_to_raw_github() -> None:
+    readme = "![产品截图](docs/images/product.png)"
+    assert _first_readme_image(readme, "https://github.com/acme/demo") == (
+        "https://raw.githubusercontent.com/acme/demo/HEAD/docs/images/product.png"
+    )
 
 
 @responses.activate

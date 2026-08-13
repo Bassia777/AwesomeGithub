@@ -90,16 +90,42 @@ def _decode_readme(payload: dict[str, Any] | None) -> str:
 def _first_readme_image(readme: str, repository_url: str) -> str:
     if not isinstance(readme, str):
         return ""
+    candidates: list[str] = []
     for match in re.finditer(r"!\[[^\]]*\]\(([^)]+)\)", readme):
-        candidate = match.group(1).strip().split()[0]
-        if candidate.startswith("https://"):
-            return candidate
-        if candidate.startswith("/"):
-            return f"https://github.com{candidate}"
+        candidates.append(match.group(1).strip().split()[0])
     for match in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', readme, re.IGNORECASE):
-        candidate = match.group(1).strip()
-        if candidate.startswith("https://"):
+        candidates.append(match.group(1).strip())
+    resolved = [_resolve_readme_image(candidate, repository_url) for candidate in candidates]
+    usable = [candidate for candidate in resolved if candidate]
+    preferred = [candidate for candidate in usable if not _is_badge_image(candidate)]
+    for candidate in preferred:
+        if "/assets/" in candidate or "/images/" in candidate or "/img/" in candidate:
             return candidate
-        if candidate.startswith("/"):
-            return f"https://github.com{candidate}"
+    if preferred:
+        return preferred[0]
     return ""
+
+
+def _resolve_readme_image(candidate: str, repository_url: str) -> str:
+    if candidate.startswith("https://"):
+        return candidate
+    identity = repository_url.removeprefix("https://github.com/").strip("/")
+    if candidate.startswith("/"):
+        return f"https://raw.githubusercontent.com/{identity}/HEAD{candidate}"
+    return f"https://raw.githubusercontent.com/{identity}/HEAD/{candidate.lstrip('./')}"
+
+
+def _is_badge_image(url: str) -> bool:
+    lowered = url.casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "img.shields.io",
+            "badge.fury.io",
+            "github.com/actions/workflows",
+            "github.com/marketplace",
+            "badge",
+            "socialify.git.ci",
+            "opencollective.com",
+        )
+    )
