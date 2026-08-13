@@ -80,7 +80,7 @@ def summarize_with_fallback(repository: TrendingRepo, providers: Sequence[Provid
         except (requests.RequestException, ProviderError):
             continue
         if isinstance(candidate, SummaryResult) and isinstance(candidate.text, str):
-            text = _limit_detail(candidate.text)
+            text = candidate.text.strip()
             if _is_valid_summary(text):
                 return SummaryResult(text=text, source=provider_name, simple_text=candidate.simple_text.strip()[:30])
 
